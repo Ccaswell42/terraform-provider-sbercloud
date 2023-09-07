@@ -82,6 +82,9 @@ type Config struct {
 	AgencyName       string
 	AgencyDomainName string
 	DelegatedProject string
+
+	// Metadata is used for extend
+	Metadata any
 }
 
 func (c *Config) LoadAndValidate() error {
@@ -253,6 +256,9 @@ func (c *Config) NewServiceClient(srv, region string) (*golangsdk.ServiceClient,
 	}
 
 	if endpoint, ok := c.Endpoints[srv]; ok {
+		if region != c.Region {
+			return nil, fmt.Errorf("Resource-level region must be the same as Provider-level region when using customizing endpoints")
+		}
 		return c.newServiceClientByEndpoint(client, srv, endpoint)
 	}
 	return c.newServiceClientByName(client, serviceCatalog, region)
@@ -585,6 +591,10 @@ func (c *Config) AosV1Client(region string) (*golangsdk.ServiceClient, error) {
 }
 
 // ********** client for Storage **********
+func (c *Config) BlockStorageV1Client(region string) (*golangsdk.ServiceClient, error) {
+	return c.NewServiceClient("evsv1", region)
+}
+
 func (c *Config) BlockStorageV21Client(region string) (*golangsdk.ServiceClient, error) {
 	return c.NewServiceClient("evsv21", region)
 }
@@ -611,6 +621,10 @@ func (c *Config) CsbsV1Client(region string) (*golangsdk.ServiceClient, error) {
 
 func (c *Config) VbsV2Client(region string) (*golangsdk.ServiceClient, error) {
 	return c.NewServiceClient("vbs", region)
+}
+
+func (c *Config) SdrsV1Client(region string) (*golangsdk.ServiceClient, error) {
+	return c.NewServiceClient("sdrs", region)
 }
 
 // ********** client for Network **********

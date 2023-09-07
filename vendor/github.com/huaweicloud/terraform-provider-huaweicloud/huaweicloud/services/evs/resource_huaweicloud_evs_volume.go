@@ -15,8 +15,10 @@ import (
 
 	"github.com/chnsz/golangsdk"
 	"github.com/chnsz/golangsdk/openstack/ecs/v1/block_devices"
-	"github.com/chnsz/golangsdk/openstack/ecs/v1/jobs"
+	ecsjobs "github.com/chnsz/golangsdk/openstack/ecs/v1/jobs"
+	"github.com/chnsz/golangsdk/openstack/evs/v1/jobs"
 	"github.com/chnsz/golangsdk/openstack/evs/v2/cloudvolumes"
+
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/common"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/helper/hashcode"
@@ -58,6 +60,18 @@ func ResourceEvsVolume() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 				ForceNew: true,
+			},
+			"iops": {
+				Type:     schema.TypeInt,
+				Optional: true,
+				ForceNew: true,
+				Computed: true,
+			},
+			"throughput": {
+				Type:     schema.TypeInt,
+				Optional: true,
+				ForceNew: true,
+				Computed: true,
 			},
 			"device_type": {
 				Type:         schema.TypeString,
@@ -106,6 +120,11 @@ func ResourceEvsVolume() *schema.Resource {
 				ForceNew: true,
 				Default:  false,
 			},
+			"dedicated_storage_id": {
+				Type:     schema.TypeString,
+				Optional: true,
+				ForceNew: true,
+			},
 			"charging_mode": common.SchemaChargingMode(nil),
 			"period_unit":   common.SchemaPeriodUnit(nil),
 			"period":        common.SchemaPeriod(nil),
@@ -143,6 +162,10 @@ func ResourceEvsVolume() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"dedicated_storage_name": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
 			"cascade": {
 				Type:     schema.TypeBool,
 				Optional: true,
@@ -172,6 +195,15 @@ func resourceVolumeAttachmentHash(v interface{}) int {
 	return hashcode.String(buf.String())
 }
 
+func validateParameter(d *schema.ResourceData) error {
+	if v, ok := d.GetOk("charging_mode"); ok && v == "prePaid" {
+		if d.Get("volume_type").(string) == "ESSD2" {
+			return fmt.Errorf("`volume_type` cannot be set to ESSD2 in prepaid charging mode")
+		}
+	}
+	return nil
+}
+
 func buildEvsVolumeCreateOpts(d *schema.ResourceData, config *config.Config) cloudvolumes.CreateOpts {
 	volumeOpts := cloudvolumes.VolumeOpts{
 		AvailabilityZone:    d.Get("availability_zone").(string),
@@ -183,6 +215,8 @@ func buildEvsVolumeCreateOpts(d *schema.ResourceData, config *config.Config) clo
 		SnapshotID:          d.Get("snapshot_id").(string),
 		ImageID:             d.Get("image_id").(string),
 		Multiattach:         d.Get("multiattach").(bool),
+		IOPS:                d.Get("iops").(int),
+		Throughput:          d.Get("throughput").(int),
 		EnterpriseProjectID: common.GetEnterpriseProjectID(d, config),
 		Tags:                resourceContainerTags(d),
 	}
@@ -204,6 +238,13 @@ func buildEvsVolumeCreateOpts(d *schema.ResourceData, config *config.Config) clo
 	if v, ok := d.GetOk("charging_mode"); ok && v == "prePaid" {
 		result.ChargeInfo = buildBssParamParams(d)
 	}
+
+	if v, ok := d.GetOk("dedicated_storage_id"); ok {
+		scheduler := cloudvolumes.SchedulerOpts{
+			StorageID: v.(string),
+		}
+		result.Scheduler = &scheduler
+	}
 	return result
 }
 
@@ -218,6 +259,9 @@ func resourceEvsVolumeCreate(ctx context.Context, d *schema.ResourceData, meta i
 	evsV21Client, err := config.BlockStorageV21Client(config.GetRegion(d))
 	if err != nil {
 		return fmtp.DiagErrorf("Error creating HuaweiCloud block storage v2.1 client: %s", err)
+	}
+	if err := validateParameter(d); err != nil {
+		return diag.FromErr(err)
 	}
 
 	opt := buildEvsVolumeCreateOpts(d, config)
@@ -247,6 +291,19 @@ func resourceEvsVolumeCreate(ctx context.Context, d *schema.ResourceData, meta i
 		}
 	}
 
+	// If charging mode is postPaid, wait for the job status to SUCCESS
+	if jobId := job.JobID; jobId != "" {
+		// The v1 client is used to query the EVS job detail.
+		evsV1Client, err := config.BlockStorageV1Client(config.GetRegion(d))
+		if err != nil {
+			return diag.Errorf("error creating EVS v1 client: %s", err)
+		}
+		if err = waitEvsJobSuccess(ctx, evsV1Client, jobId, d.Timeout(schema.TimeoutCreate)); err != nil {
+			return diag.Errorf("the job (%s) is not SUCCESS while creating EVS volume (%s): %s", jobId,
+				d.Id(), err)
+		}
+	}
+
 	logp.Printf("[DEBUG] Waiting for the EVS volume to become available, the volume ID is %s.", d.Id())
 	stateConf := &resource.StateChangeConf{
 		Pending:                   []string{"creating"},
@@ -263,6 +320,39 @@ func resourceEvsVolumeCreate(ctx context.Context, d *schema.ResourceData, meta i
 	}
 
 	return resourceEvsVolumeRead(ctx, d, meta)
+}
+
+func waitEvsJobSuccess(ctx context.Context, client *golangsdk.ServiceClient, jobId string,
+	timeout time.Duration) error {
+	stateConf := &resource.StateChangeConf{
+		Pending:      []string{"PENDING"},
+		Target:       []string{"SUCCESS"},
+		Refresh:      evsJobRefreshFunc(client, jobId),
+		Timeout:      timeout,
+		Delay:        5 * time.Second,
+		PollInterval: 10 * time.Second,
+	}
+	_, err := stateConf.WaitForStateContext(ctx)
+	return err
+}
+
+func evsJobRefreshFunc(c *golangsdk.ServiceClient, jobId string) resource.StateRefreshFunc {
+	return func() (interface{}, string, error) {
+		resp, err := jobs.GetJobDetails(c, jobId).ExtractJob()
+		if err != nil {
+			// there has no special code here
+			return resp, "ERROR", err
+		}
+		status := resp.Status
+		if status == "SUCCESS" {
+			return resp, status, nil
+		}
+		if status == "FAIL" {
+			return resp, status, fmt.Errorf("the EVS job (%s) status is FAIL, the fail reason is: %s",
+				jobId, resp.FailReason)
+		}
+		return resp, "PENDING", nil
+	}
 }
 
 func setEvsVolumeDeviceType(d *schema.ResourceData, resp *cloudvolumes.Volume) error {
@@ -318,11 +408,15 @@ func resourceEvsVolumeRead(_ context.Context, d *schema.ResourceData, meta inter
 		d.Set("availability_zone", resp.AvailabilityZone),
 		d.Set("snapshot_id", resp.SnapshotID),
 		d.Set("volume_type", resp.VolumeType),
+		d.Set("iops", resp.IOPS.TotalVal),
+		d.Set("throughput", resp.Throughput.TotalVal),
 		d.Set("enterprise_project_id", resp.EnterpriseProjectID),
 		d.Set("region", config.GetRegion(d)),
 		d.Set("wwn", resp.WWN),
 		d.Set("multiattach", resp.Multiattach),
 		d.Set("tags", resp.Tags),
+		d.Set("dedicated_storage_id", resp.DedicatedStorageID),
+		d.Set("dedicated_storage_name", resp.DedicatedStorageName),
 		setEvsVolumeChargingInfo(d, resp),
 		setEvsVolumeDeviceType(d, resp),
 		setEvsVolumeImageId(d, resp),
@@ -393,6 +487,18 @@ func resourceEvsVolumeUpdate(ctx context.Context, d *schema.ResourceData, meta i
 			if err != nil {
 				return fmtp.DiagErrorf("The order (%s) is not completed while extending EVS volume (%s) size: %#v",
 					resp.OrderID, d.Id(), err)
+			}
+		}
+
+		if jobId := resp.JobID; jobId != "" {
+			// The v1 client is used to query the EVS job detail.
+			evsV1Client, err := config.BlockStorageV1Client(config.GetRegion(d))
+			if err != nil {
+				return diag.Errorf("error creating EVS v1 client: %s", err)
+			}
+			if err = waitEvsJobSuccess(ctx, evsV1Client, jobId, d.Timeout(schema.TimeoutUpdate)); err != nil {
+				return diag.Errorf("the job (%s) is not SUCCESS while extending EVS volume (%s) size: %s", jobId,
+					d.Id(), err)
 			}
 		}
 
@@ -517,7 +623,7 @@ func resourceEvsVolumeDelete(ctx context.Context, d *schema.ResourceData, meta i
 
 func AttachmentJobRefreshFunc(c *golangsdk.ServiceClient, jobId string) resource.StateRefreshFunc {
 	return func() (interface{}, string, error) {
-		resp, err := jobs.Get(c, jobId)
+		resp, err := ecsjobs.Get(c, jobId)
 		if err != nil {
 			if _, ok := err.(golangsdk.ErrDefault404); ok {
 				return resp, "NOTFOUND", nil

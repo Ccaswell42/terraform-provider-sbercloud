@@ -1,17 +1,6 @@
 package sbercloud
 
 import (
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/cts"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/dew"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/dns"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/nat"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/obs"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/sfs"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/swr"
-
-	dcs2 "github.com/sbercloud-terraform/terraform-provider-sbercloud/sbercloud/services/dcs"
-	"sync"
-
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
@@ -22,12 +11,15 @@ import (
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/cce"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/cdm"
 	css_huawei "github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/css"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/cts"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/dcs"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/dds"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/deprecated"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/dew"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/dis"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/dli"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/dms"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/dns"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/dws"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/ecs"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/eip"
@@ -35,16 +27,25 @@ import (
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/eps"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/evs"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/fgs"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/ges"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/iam"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/ims"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/lb"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/lts"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/mrs"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/nat"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/obs"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/rds"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/sfs"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/smn"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/swr"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/vpc"
 	"github.com/sbercloud-terraform/terraform-provider-sbercloud/sbercloud/services/ces"
 	"github.com/sbercloud-terraform/terraform-provider-sbercloud/sbercloud/services/css"
+	dcs2 "github.com/sbercloud-terraform/terraform-provider-sbercloud/sbercloud/services/dcs"
+	dli2 "github.com/sbercloud-terraform/terraform-provider-sbercloud/sbercloud/services/dli"
 	"github.com/sbercloud-terraform/terraform-provider-sbercloud/sbercloud/services/drs"
+	"sync"
 )
 
 // This is a global MutexKV for use within this plugin.
@@ -200,7 +201,7 @@ func Provider() *schema.Provider {
 			"sbercloud_availability_zones":     huaweicloud.DataSourceAvailabilityZones(),
 			"sbercloud_css_flavors":            css_huawei.DataSourceCssFlavors(),
 			"sbercloud_cbr_backup":             cbr.DataSourceBackup(),
-			"sbercloud_cbr_vaults":             cbr.DataSourceCbrVaultsV3(),
+			"sbercloud_cbr_vaults":             cbr.DataSourceVaults(),
 			"sbercloud_cce_addon_template":     cce.DataSourceAddonTemplate(),
 			"sbercloud_cce_cluster":            cce.DataSourceCCEClusterV3(),
 			"sbercloud_cce_clusters":           cce.DataSourceCCEClusters(),
@@ -226,14 +227,14 @@ func Provider() *schema.Provider {
 			"sbercloud_elb_pools":              elb.DataSourcePools(),
 			"sbercloud_enterprise_project":     eps.DataSourceEnterpriseProject(),
 			"sbercloud_evs_volumes":            evs.DataSourceEvsVolumesV2(),
-			"sbercloud_identity_role":          iam.DataSourceIdentityRoleV3(),
+			"sbercloud_identity_role":          iam.DataSourceIdentityRole(),
 			"sbercloud_identity_custom_role":   iam.DataSourceIdentityCustomRole(),
 			"sbercloud_identity_group":         iam.DataSourceIdentityGroup(),
 			"sbercloud_identity_projects":      iam.DataSourceIdentityProjects(),
 			"sbercloud_identity_users":         iam.DataSourceIdentityUsers(),
 			"sbercloud_images_image":           ims.DataSourceImagesImageV2(),
 			"sbercloud_kms_key":                dew.DataSourceKmsKey(),
-			"sbercloud_kms_data_key":           huaweicloud.DataSourceKmsDataKeyV1(),
+			"sbercloud_kms_data_key":           dew.DataSourceKmsDataKeyV1(),
 			"sbercloud_lb_listeners":           lb.DataSourceListeners(),
 			"sbercloud_lb_loadbalancer":        lb.DataSourceELBV2Loadbalancer(),
 			"sbercloud_lb_certificate":         lb.DataSourceLBCertificateV2(),
@@ -264,7 +265,7 @@ func Provider() *schema.Provider {
 			"sbercloud_vpc_subnets":            vpc.DataSourceVpcSubnets(),
 			"sbercloud_vpc_subnet_ids":         vpc.DataSourceVpcSubnetIdsV1(),
 			// Legacy
-			"sbercloud_identity_role_v3": iam.DataSourceIdentityRoleV3(),
+			"sbercloud_identity_role_v3": iam.DataSourceIdentityRole(),
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -274,15 +275,15 @@ func Provider() *schema.Provider {
 			"sbercloud_as_configuration":                as.ResourceASConfiguration(),
 			"sbercloud_as_group":                        as.ResourceASGroup(),
 			"sbercloud_as_policy":                       as.ResourceASPolicy(),
-			"sbercloud_cbr_policy":                      cbr.ResourceCBRPolicyV3(),
+			"sbercloud_cbr_policy":                      cbr.ResourcePolicy(),
 			"sbercloud_cbr_vault":                       cbr.ResourceVault(),
 			"sbercloud_css_cluster":                     css.ResourceCssCluster(),
 			"sbercloud_cce_addon":                       cce.ResourceAddon(),
 			"sbercloud_cce_cluster":                     cce.ResourceCluster(),
 			"sbercloud_cce_namespace":                   cce.ResourceCCENamespaceV1(),
 			"sbercloud_cce_node":                        cce.ResourceNode(),
-			"sbercloud_cce_node_attach":                 cce.ResourceCCENodeAttachV3(),
-			"sbercloud_cce_node_pool":                   cce.ResourceCCENodePool(),
+			"sbercloud_cce_node_attach":                 cce.ResourceNodeAttach(),
+			"sbercloud_cce_node_pool":                   cce.ResourceNodePool(),
 			"sbercloud_cce_pvc":                         cce.ResourceCcePersistentVolumeClaimsV1(),
 			"sbercloud_cdm_cluster":                     cdm.ResourceCdmCluster(),
 			"sbercloud_compute_instance":                ResourceComputeInstanceV2(),
@@ -304,7 +305,7 @@ func Provider() *schema.Provider {
 			"sbercloud_dli_database":                    dli.ResourceDliSqlDatabaseV1(),
 			"sbercloud_dli_package":                     dli.ResourceDliPackageV2(),
 			"sbercloud_dli_queue":                       dli.ResourceDliQueue(),
-			"sbercloud_dli_spark_job":                   dli.ResourceDliSparkJobV2(),
+			"sbercloud_dli_spark_job":                   dli2.ResourceDliSparkJob(),
 			"sbercloud_dms_instance":                    ResourceDmsInstancesV1(),
 			"sbercloud_dms_kafka_instance":              dms.ResourceDmsKafkaInstance(),
 			"sbercloud_dms_kafka_topic":                 dms.ResourceDmsKafkaTopic(),
@@ -327,18 +328,18 @@ func Provider() *schema.Provider {
 			"sbercloud_evs_snapshot":                    huaweicloud.ResourceEvsSnapshotV2(),
 			"sbercloud_evs_volume":                      evs.ResourceEvsVolume(),
 			"sbercloud_fgs_function":                    fgs.ResourceFgsFunctionV2(),
-			"sbercloud_ges_graph":                       huaweicloud.ResourceGesGraphV1(),
+			"sbercloud_ges_graph":                       ges.ResourceGesGraph(),
 			"sbercloud_identity_access_key":             iam.ResourceIdentityKey(),
 			"sbercloud_identity_acl":                    iam.ResourceIdentityACL(),
 			"sbercloud_identity_agency":                 iam.ResourceIAMAgencyV3(),
-			"sbercloud_identity_group":                  iam.ResourceIdentityGroupV3(),
-			"sbercloud_identity_group_membership":       iam.ResourceIdentityGroupMembershipV3(),
-			"sbercloud_identity_project":                iam.ResourceIdentityProjectV3(),
+			"sbercloud_identity_group":                  iam.ResourceIdentityGroup(),
+			"sbercloud_identity_group_membership":       iam.ResourceIdentityGroupMembership(),
+			"sbercloud_identity_project":                iam.ResourceIdentityProject(),
 			"sbercloud_identity_provider":               iam.ResourceIdentityProvider(),
 			"sbercloud_identity_provider_conversion":    iam.ResourceIAMProviderConversion(),
 			"sbercloud_identity_role":                   iam.ResourceIdentityRole(),
 			"sbercloud_identity_role_assignment":        iam.ResourceIdentityGroupRoleAssignment(),
-			"sbercloud_identity_user":                   iam.ResourceIdentityUserV3(),
+			"sbercloud_identity_user":                   iam.ResourceIdentityUser(),
 			"sbercloud_images_image":                    ims.ResourceImsImage(),
 			"sbercloud_kms_key":                         dew.ResourceKmsKey(),
 			"sbercloud_lb_certificate":                  lb.ResourceCertificateV2(),
@@ -350,8 +351,8 @@ func Provider() *schema.Provider {
 			"sbercloud_lb_monitor":                      lb.ResourceMonitorV2(),
 			"sbercloud_lb_pool":                         lb.ResourcePoolV2(),
 			"sbercloud_lb_whitelist":                    lb.ResourceWhitelistV2(),
-			"sbercloud_lts_group":                       huaweicloud.ResourceLTSGroupV2(),
-			"sbercloud_lts_stream":                      huaweicloud.ResourceLTSStreamV2(),
+			"sbercloud_lts_group":                       lts.ResourceLTSGroup(),
+			"sbercloud_lts_stream":                      lts.ResourceLTSStream(),
 			"sbercloud_mapreduce_cluster":               mrs.ResourceMRSClusterV2(),
 			"sbercloud_mapreduce_job":                   mrs.ResourceMRSJobV2(),
 			"sbercloud_nat_dnat_rule":                   nat.ResourcePublicDnatRule(),
@@ -391,9 +392,9 @@ func Provider() *schema.Provider {
 			"sbercloud_vpc_address_group":               vpc.ResourceVpcAddressGroup(),
 			// Legacy
 			"sbercloud_identity_role_assignment_v3":  iam.ResourceIdentityGroupRoleAssignment(),
-			"sbercloud_identity_user_v3":             iam.ResourceIdentityUserV3(),
-			"sbercloud_identity_group_v3":            iam.ResourceIdentityGroupV3(),
-			"sbercloud_identity_group_membership_v3": iam.ResourceIdentityGroupMembershipV3(),
+			"sbercloud_identity_user_v3":             iam.ResourceIdentityUser(),
+			"sbercloud_identity_group_v3":            iam.ResourceIdentityGroup(),
+			"sbercloud_identity_group_membership_v3": iam.ResourceIdentityGroupMembership(),
 		},
 	}
 

@@ -70,6 +70,18 @@ func ExpandToStringList(v []interface{}) []string {
 	return s
 }
 
+// ExpandToStringMap takes the result for a map of string and returns a map[string]string
+func ExpandToStringMap(v map[string]interface{}) map[string]string {
+	s := make(map[string]string)
+	for key, val := range v {
+		if strVal, ok := val.(string); ok && strVal != "" {
+			s[key] = strVal
+		}
+	}
+
+	return s
+}
+
 // ExpandToStringListPointer takes the result for an array of strings and returns a pointer of the array
 func ExpandToStringListPointer(v []interface{}) *[]string {
 	s := ExpandToStringList(v)
@@ -232,7 +244,9 @@ func RemoveNil(data map[string]interface{}) map[string]interface{} {
 
 		switch v := v.(type) {
 		case map[string]interface{}:
-			withoutNil[k] = RemoveNil(v)
+			if len(v) > 0 {
+				withoutNil[k] = RemoveNil(v)
+			}
 		case []map[string]interface{}:
 			rv := make([]map[string]interface{}, 0, len(v))
 			for _, vv := range v {

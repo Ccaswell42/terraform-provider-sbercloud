@@ -19,6 +19,7 @@ import (
 	"github.com/chnsz/golangsdk/openstack/ecs/v1/block_devices"
 	"github.com/chnsz/golangsdk/openstack/ecs/v1/cloudservers"
 	"github.com/chnsz/golangsdk/openstack/ecs/v1/powers"
+	"github.com/chnsz/golangsdk/openstack/eps/v1/enterpriseprojects"
 	"github.com/chnsz/golangsdk/openstack/evs/v2/cloudvolumes"
 	"github.com/chnsz/golangsdk/openstack/ims/v2/cloudimages"
 	groups "github.com/chnsz/golangsdk/openstack/networking/v1/security/securitygroups"
@@ -38,6 +39,7 @@ var (
 		"OFF":    "os-stop",
 		"REBOOT": "reboot",
 	}
+	SystemDiskType = "GPSSD"
 )
 
 func ResourceComputeInstance() *schema.Resource {
@@ -204,6 +206,24 @@ func ResourceComputeInstance() *schema.Resource {
 				Optional: true,
 				Computed: true,
 			},
+			"system_disk_kms_key_id": {
+				Type:     schema.TypeString,
+				Optional: true,
+				ForceNew: true,
+				Computed: true,
+			},
+			"system_disk_iops": {
+				Type:     schema.TypeInt,
+				Optional: true,
+				ForceNew: true,
+				Computed: true,
+			},
+			"system_disk_throughput": {
+				Type:     schema.TypeInt,
+				Optional: true,
+				ForceNew: true,
+				Computed: true,
+			},
 			"data_disks": {
 				Type:     schema.TypeList,
 				Optional: true,
@@ -228,6 +248,16 @@ func ResourceComputeInstance() *schema.Resource {
 						},
 						"kms_key_id": {
 							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+						},
+						"iops": {
+							Type:     schema.TypeInt,
+							Optional: true,
+							ForceNew: true,
+						},
+						"throughput": {
+							Type:     schema.TypeInt,
 							Optional: true,
 							ForceNew: true,
 						},
@@ -601,9 +631,12 @@ func resourceComputeInstanceCreate(ctx context.Context, d *schema.ResourceData, 
 
 	schedulerHintsRaw := d.Get("scheduler_hints").(*schema.Set).List()
 	if len(schedulerHintsRaw) > 0 {
-		log.Printf("[DEBUG] schedulerhints: %+v", schedulerHintsRaw)
-		schedulerHints := buildInstanceSchedulerHints(schedulerHintsRaw[0].(map[string]interface{}))
-		createOpts.SchedulerHints = &schedulerHints
+		if m, ok := schedulerHintsRaw[0].(map[string]interface{}); ok {
+			schedulerHints := buildInstanceSchedulerHints(m)
+			createOpts.SchedulerHints = &schedulerHints
+		} else {
+			log.Printf("[WARN] can not build scheduler hints: %+v", schedulerHintsRaw[0])
+		}
 	}
 
 	log.Printf("[DEBUG] ECS create options: %#v", createOpts)
@@ -833,6 +866,9 @@ func resourceComputeInstanceRead(_ context.Context, d *schema.ResourceData, meta
 				d.Set("system_disk_id", b.ID)
 				d.Set("system_disk_size", volumeInfo.Size)
 				d.Set("system_disk_type", volumeInfo.VolumeType)
+				d.Set("system_disk_kms_key_id", volumeInfo.Metadata.SystemCmkID)
+				d.Set("system_disk_iops", volumeInfo.IOPS.TotalVal)
+				d.Set("system_disk_throughput", volumeInfo.Throughput.TotalVal)
 			}
 		}
 		d.Set("volume_attached", bds)
@@ -1473,7 +1509,10 @@ func getVpcID(d *schema.ResourceData, client *golangsdk.ServiceClient) (string, 
 
 func resourceComputeSchedulerHintsHash(v interface{}) int {
 	var buf bytes.Buffer
-	m := v.(map[string]interface{})
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return 0
+	}
 
 	if m["group"] != nil {
 		buf.WriteString(fmt.Sprintf("%s-", m["group"].(string)))
@@ -1647,12 +1686,23 @@ func flattenTagsToMap(tags []string) map[string]string {
 func buildInstanceRootVolume(d *schema.ResourceData) cloudservers.RootVolume {
 	diskType := d.Get("system_disk_type").(string)
 	if diskType == "" {
-		diskType = "GPSSD"
+		diskType = SystemDiskType
 	}
 	volRequest := cloudservers.RootVolume{
 		VolumeType: diskType,
 		Size:       d.Get("system_disk_size").(int),
+		IOPS:       d.Get("system_disk_iops").(int),
+		Throughput: d.Get("system_disk_throughput").(int),
 	}
+
+	if v, ok := d.GetOk("system_disk_kms_key_id"); ok {
+		matadata := cloudservers.VolumeMetadata{
+			SystemEncrypted: "1",
+			SystemCmkid:     v.(string),
+		}
+		volRequest.Metadata = &matadata
+	}
+
 	return volRequest
 }
 
@@ -1665,7 +1715,10 @@ func buildInstanceDataVolumes(d *schema.ResourceData) []cloudservers.DataVolume 
 		volRequest := cloudservers.DataVolume{
 			VolumeType: vol["type"].(string),
 			Size:       vol["size"].(int),
+			IOPS:       vol["iops"].(int),
+			Throughput: vol["throughput"].(int),
 		}
+
 		if vol["snapshot_id"] != "" {
 			extendparam := cloudservers.VolumeExtendParam{
 				SnapshotId: vol["snapshot_id"].(string),
@@ -1711,7 +1764,14 @@ func migrateEnterpriseProject(ctx context.Context, d *schema.ResourceData,
 	resourceID := d.Id()
 	targetEPSId := d.Get("enterprise_project_id").(string)
 
-	if err := common.MigrateEnterpriseProject(epsClient, region, targetEPSId, "ecs", resourceID); err != nil {
+	migrateOpts := enterpriseprojects.MigrateResourceOpts{
+		RegionId:     region,
+		ProjectId:    ecsClient.ProjectID,
+		ResourceType: "ecs",
+		ResourceId:   resourceID,
+	}
+
+	if err := common.MigrateEnterpriseProject(epsClient, targetEPSId, migrateOpts); err != nil {
 		return err
 	}
 
