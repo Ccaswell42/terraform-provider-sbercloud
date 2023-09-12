@@ -240,7 +240,7 @@ func testAccRdsInstanceV3_basic(name string) string {
 resource "sbercloud_rds_instance" "test" {
   name              = "%s"
   flavor            = "rds.pg.c6.large.4"
-  availability_zone = [data.sbercloud_availability_zones.test.names[0]]
+  availability_zone = [data.sbercloud_availability_zones.test.names[1]]
   security_group_id = sbercloud_networking_secgroup.test.id
   subnet_id         = sbercloud_vpc_subnet.test.id
   vpc_id            = sbercloud_vpc.test.id

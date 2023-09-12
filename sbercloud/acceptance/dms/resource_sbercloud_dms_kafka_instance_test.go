@@ -137,7 +137,7 @@ data "sbercloud_vpc" "test" {
 }
 
 data "sbercloud_vpc_subnet" "test" {
-  name = "subnet-default"
+  name = "subnet_test"
 }
 
 data "sbercloud_dms_product" "test" {
