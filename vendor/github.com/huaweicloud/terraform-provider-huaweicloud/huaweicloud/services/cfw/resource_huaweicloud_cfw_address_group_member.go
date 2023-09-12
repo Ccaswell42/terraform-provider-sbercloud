@@ -44,6 +44,12 @@ func ResourceAddressGroupMember() *schema.Resource {
 				ForceNew:    true,
 				Description: `Specifies the ID of the IP address group.`,
 			},
+			"name": {
+				Type:        schema.TypeString,
+				Required:    true,
+				ForceNew:    true,
+				Description: `Specifies the address name.`,
+			},
 			"address": {
 				Type:        schema.TypeString,
 				Required:    true,
@@ -65,13 +71,6 @@ func ResourceAddressGroupMember() *schema.Resource {
 				Computed:    true,
 				ForceNew:    true,
 				Description: `Specifies address description.`,
-			},
-			// Deprecated
-			"name": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				ForceNew:    true,
-				Description: `schema: Deprecated; Specifies the address name.`,
 			},
 		},
 	}

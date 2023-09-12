@@ -130,11 +130,6 @@ type RootVolume struct {
 
 	Size int `json:"size,omitempty"`
 
-	// The iops of evs volume. Only required when volume_type is `GPSSD2` or `ESSD2`
-	IOPS int `json:"iops,omitempty"`
-	// The throughput of evs volume. Only required when volume_type is `GPSSD2`
-	Throughput int `json:"throughput,omitempty"`
-
 	ExtendParam *VolumeExtendParam `json:"extendparam,omitempty"`
 
 	Metadata *VolumeMetadata `json:"metadata,omitempty"`
@@ -148,11 +143,6 @@ type DataVolume struct {
 	MultiAttach *bool `json:"multiattach,omitempty"`
 
 	PassThrough *bool `json:"hw:passthrough,omitempty"`
-
-	// The iops of evs volume. Only required when volume_type is `GPSSD2` or `ESSD2`
-	IOPS int `json:"iops,omitempty"`
-	// The throughput of evs volume. Only required when volume_type is `GPSSD2`
-	Throughput int `json:"throughput,omitempty"`
 
 	Extendparam *VolumeExtendParam `json:"extendparam,omitempty"`
 

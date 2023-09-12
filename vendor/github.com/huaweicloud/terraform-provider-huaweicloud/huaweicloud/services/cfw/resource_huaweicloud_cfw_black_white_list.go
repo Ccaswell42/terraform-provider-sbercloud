@@ -64,8 +64,7 @@ func ResourceBlackWhiteList() *schema.Resource {
 			},
 			"port": {
 				Type:        schema.TypeString,
-				Optional:    true,
-				Computed:    true,
+				Required:    true,
 				Description: `Specifies the destination port.`,
 			},
 			"address_type": {

@@ -67,7 +67,7 @@ func GetEnterpriseProjectID(d *schema.ResourceData, config *config.Config) strin
 	return config.EnterpriseProjectID
 }
 
-func MigrateEnterpriseProject(client *golangsdk.ServiceClient, targetEPSId string, migrateOpts enterpriseprojects.MigrateResourceOpts) error {
+func MigrateEnterpriseProject(client *golangsdk.ServiceClient, region, targetEPSId, resourceType, resourceID string) error {
 	if targetEPSId == "" {
 		targetEPSId = "0"
 	} else {
@@ -77,9 +77,15 @@ func MigrateEnterpriseProject(client *golangsdk.ServiceClient, targetEPSId strin
 		}
 	}
 
+	migrateOpts := enterpriseprojects.MigrateResourceOpts{
+		RegionId:     region,
+		ProjectId:    client.ProjectID,
+		ResourceType: resourceType,
+		ResourceId:   resourceID,
+	}
 	migrateResult := enterpriseprojects.Migrate(client, migrateOpts, targetEPSId)
 	if err := migrateResult.Err; err != nil {
-		return fmt.Errorf("failed to migrate %s to enterprise project %s, err: %s", migrateOpts.ResourceId, targetEPSId, err)
+		return fmt.Errorf("failed to migrate %s to enterprise project %s, err: %s", resourceID, targetEPSId, err)
 	}
 
 	return nil
@@ -193,7 +199,7 @@ func WaitOrderComplete(ctx context.Context, client *golangsdk.ServiceClient, ord
 	}
 	_, err := stateConf.WaitForStateContext(ctx)
 	if err != nil {
-		return fmt.Errorf("error waiting for the order (%s) to complete payment: %s", orderId, err)
+		return fmt.Errorf("error waiting for the order (%s) to complete payment: %#v", orderId, err)
 	}
 	return nil
 }
@@ -223,7 +229,7 @@ func WaitOrderResourceComplete(ctx context.Context, client *golangsdk.ServiceCli
 	}
 	res, err := stateConf.WaitForStateContext(ctx)
 	if err != nil {
-		return "", fmt.Errorf("error while waiting for the order (%s) to complete: %s", orderId, err)
+		return "", fmt.Errorf("error while waiting for the order (%s) to complete: %#v", orderId, err)
 	}
 
 	r := res.(resources.Resource)
@@ -238,7 +244,7 @@ func refreshOrderResourceStatusFunc(client *golangsdk.ServiceClient, orderId str
 		}
 		resp, err := resources.List(client, listOpts)
 		if err != nil || resp == nil {
-			return nil, "ERROR", fmt.Errorf("error waiting for the order (%s) to complete: %s", orderId, err)
+			return nil, "ERROR", fmt.Errorf("error waiting for the order (%s) to complete: %#v", orderId, err)
 		}
 		if resp.TotalCount < 1 {
 			return nil, "PENDING", nil

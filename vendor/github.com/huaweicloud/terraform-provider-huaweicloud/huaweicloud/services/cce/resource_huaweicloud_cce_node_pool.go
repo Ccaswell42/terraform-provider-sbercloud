@@ -74,8 +74,101 @@ func ResourceNodePool() *schema.Resource {
 				Optional: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
-			"root_volume":  resourceNodeRootVolume(),
-			"data_volumes": resourceNodeDataVolume(),
+			"root_volume": {
+				Type:     schema.TypeList,
+				Required: true,
+				ForceNew: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"size": {
+							Type:     schema.TypeInt,
+							Required: true,
+							ForceNew: true,
+						},
+						"volumetype": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+						"extend_params": {
+							Type:     schema.TypeMap,
+							Optional: true,
+							ForceNew: true,
+							Elem:     &schema.Schema{Type: schema.TypeString},
+						},
+						"kms_key_id": {
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+						},
+
+						// Internal parameters
+						"hw_passthrough": {
+							Type:        schema.TypeBool,
+							Optional:    true,
+							ForceNew:    true,
+							Description: "schema: Internal",
+						},
+
+						// Deprecated parameters
+						"extend_param": {
+							Type:       schema.TypeString,
+							Optional:   true,
+							ForceNew:   true,
+							Deprecated: "use extend_params instead",
+						},
+					},
+				},
+			},
+			"data_volumes": {
+				Type:     schema.TypeList,
+				Required: true,
+				ForceNew: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"size": {
+							Type:     schema.TypeInt,
+							Required: true,
+							ForceNew: true,
+						},
+						"volumetype": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+						"extend_params": {
+							Type:     schema.TypeMap,
+							Optional: true,
+							ForceNew: true,
+							Elem:     &schema.Schema{Type: schema.TypeString},
+						},
+						"kms_key_id": {
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+						},
+
+						// Internal parameters
+						"hw_passthrough": {
+							Type:        schema.TypeBool,
+							Optional:    true,
+							ForceNew:    true,
+							Description: "schema: Internal",
+						},
+
+						// Deprecated parameters
+						"extend_param": {
+							Type:       schema.TypeString,
+							Optional:   true,
+							ForceNew:   true,
+							Deprecated: "use extend_params instead",
+						},
+					},
+				},
+			},
 			"availability_zone": {
 				Type:     schema.TypeString,
 				Optional: true,
@@ -100,7 +193,130 @@ func ResourceNodePool() *schema.Resource {
 				ForceNew:  true,
 				Sensitive: true,
 			},
-			"storage": resourceNodeStorageSchema(),
+			"storage": {
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: true,
+				Computed: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"selectors": {
+							Type:     schema.TypeList,
+							Required: true,
+							ForceNew: true,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"name": {
+										Type:     schema.TypeString,
+										Required: true,
+										ForceNew: true,
+									},
+									"type": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+										Default:  "evs",
+									},
+									"match_label_size": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+										Computed: true,
+									},
+									"match_label_volume_type": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+										Computed: true,
+									},
+									"match_label_metadata_encrypted": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+										Computed: true,
+									},
+									"match_label_metadata_cmkid": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+										Computed: true,
+									},
+									"match_label_count": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+										Computed: true,
+									},
+								},
+							},
+						},
+						"groups": {
+							Type:     schema.TypeList,
+							Required: true,
+							ForceNew: true,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"name": {
+										Type:     schema.TypeString,
+										Required: true,
+										ForceNew: true,
+									},
+									"cce_managed": {
+										Type:     schema.TypeBool,
+										Optional: true,
+										ForceNew: true,
+										Computed: true,
+									},
+									"selector_names": {
+										Type:     schema.TypeList,
+										Required: true,
+										ForceNew: true,
+										Elem:     &schema.Schema{Type: schema.TypeString},
+									},
+									"virtual_spaces": {
+										Type:     schema.TypeList,
+										Required: true,
+										ForceNew: true,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"name": {
+													Type:     schema.TypeString,
+													Required: true,
+													ForceNew: true,
+												},
+												"size": {
+													Type:     schema.TypeString,
+													Required: true,
+													ForceNew: true,
+												},
+												"lvm_lv_type": {
+													Type:     schema.TypeString,
+													Optional: true,
+													ForceNew: true,
+													Computed: true,
+												},
+												"lvm_path": {
+													Type:     schema.TypeString,
+													Optional: true,
+													ForceNew: true,
+													Computed: true,
+												},
+												"runtime_lv_type": {
+													Type:     schema.TypeString,
+													Optional: true,
+													ForceNew: true,
+													Computed: true,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 			"taints": {
 				Type:     schema.TypeList,
 				Optional: true,
@@ -183,12 +399,6 @@ func ResourceNodePool() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 				ForceNew: true,
-			},
-			"initialized_conditions": {
-				Type:     schema.TypeList,
-				Optional: true,
-				Computed: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 			"current_node_count": {
 				Type:     schema.TypeInt,
@@ -282,10 +492,9 @@ func buildNodePoolCreateOpts(d *schema.ResourceData) (*nodepools.CreateOpts, err
 						SubnetId: d.Get("subnet_id").(string),
 					},
 				},
-				ExtendParam:           buildExtendParams(d),
-				Taints:                buildResourceNodeTaint(d),
-				UserTags:              utils.ExpandResourceTags(d.Get("tags").(map[string]interface{})),
-				InitializedConditions: utils.ExpandToStringList(d.Get("initialized_conditions").([]interface{})),
+				ExtendParam: buildExtendParams(d),
+				Taints:      buildResourceNodeTaint(d),
+				UserTags:    utils.ExpandResourceTags(d.Get("tags").(map[string]interface{})),
 			},
 			Autoscaling: nodepools.AutoscalingSpec{
 				Enable:                d.Get("scall_enable").(bool),
@@ -404,13 +613,12 @@ func resourceNodePoolRead(_ context.Context, d *schema.ResourceData, meta interf
 		d.Set("priority", s.Spec.Autoscaling.Priority),
 		d.Set("type", s.Spec.Type),
 		d.Set("ecs_group_id", s.Spec.NodeManagement.ServerGroupReference),
-		d.Set("storage", flattenResourceNodeStorage(s.Spec.NodeTemplate.Storage)),
+		d.Set("storage", flattenStorage(s.Spec.NodeTemplate.Storage)),
 		d.Set("security_groups", s.Spec.CustomSecurityGroups),
 		d.Set("tags", utils.TagsToMap(s.Spec.NodeTemplate.UserTags)),
 		d.Set("status", s.Status.Phase),
 		d.Set("data_volumes", flattenResourceNodeDataVolume(s.Spec.NodeTemplate.DataVolumes)),
 		d.Set("root_volume", flattenResourceNodeRootVolume(s.Spec.NodeTemplate.RootVolume)),
-		d.Set("initialized_conditions", s.Spec.NodeTemplate.InitializedConditions),
 	)
 
 	if s.Spec.NodeTemplate.BillingMode != 0 {
@@ -435,8 +643,77 @@ func resourceNodePoolRead(_ context.Context, d *schema.ResourceData, meta interf
 	return nil
 }
 
+func flattenStorage(storageRaw *nodes.StorageSpec) []map[string]interface{} {
+	if storageRaw == nil {
+		return nil
+	}
+
+	storageSelectorsRaw := storageRaw.StorageSelectors
+	storageSelectors := make([]map[string]interface{}, len(storageSelectorsRaw))
+	for i, s := range storageSelectorsRaw {
+		storageSelector := map[string]interface{}{
+			"name": s.Name,
+			"type": s.StorageType,
+		}
+
+		if s.MatchLabels != (nodes.MatchLabelsSpec{}) {
+			storageSelector["match_label_size"] = s.MatchLabels.Size
+			storageSelector["match_label_volume_type"] = s.MatchLabels.VolumeType
+			storageSelector["match_label_metadata_encrypted"] = s.MatchLabels.MetadataEncrypted
+			storageSelector["match_label_metadata_cmkid"] = s.MatchLabels.MetadataCmkid
+			storageSelector["match_label_count"] = s.MatchLabels.Count
+		}
+		storageSelectors[i] = storageSelector
+	}
+
+	storageGroupsRaw := storageRaw.StorageGroups
+	storageGroups := make([]map[string]interface{}, len(storageGroupsRaw))
+	for i, v := range storageGroupsRaw {
+		storageGroup := map[string]interface{}{
+			"name":           v.Name,
+			"cce_managed":    v.CceManaged,
+			"selector_names": v.SelectorNames,
+		}
+
+		virtualSpaces := make([]map[string]interface{}, len(v.VirtualSpaces))
+		for k, s := range v.VirtualSpaces {
+			virtualSpace := map[string]interface{}{
+				"name": s.Name,
+				"size": s.Size,
+			}
+
+			if s.LVMConfig != nil {
+				virtualSpace["lvm_lv_type"] = s.LVMConfig.LvType
+				virtualSpace["lvm_path"] = s.LVMConfig.Path
+			}
+			if s.RuntimeConfig != nil {
+				virtualSpace["runtime_lv_type"] = s.RuntimeConfig.LvType
+			}
+
+			virtualSpaces[k] = virtualSpace
+		}
+		storageGroup["virtual_spaces"] = virtualSpaces
+
+		storageGroups[i] = storageGroup
+	}
+
+	return []map[string]interface{}{
+		{
+			"selectors": storageSelectors,
+			"groups":    storageGroups,
+		},
+	}
+}
+
 func buildNodePoolUpdateOpts(d *schema.ResourceData) (*nodepools.UpdateOpts, error) {
+	loginSpec, err := buildResourceNodeLoginSpec(d)
+	if err != nil {
+		return nil, err
+	}
+
 	updateOpts := nodepools.UpdateOpts{
+		Kind:       "NodePool",
+		ApiVersion: "v3",
 		Metadata: nodepools.UpdateMetaData{
 			Name: d.Get("name").(string),
 		},
@@ -449,12 +726,18 @@ func buildNodePoolUpdateOpts(d *schema.ResourceData) (*nodepools.UpdateOpts, err
 				ScaleDownCooldownTime: d.Get("scale_down_cooldown_time").(int),
 				Priority:              d.Get("priority").(int),
 			},
-			NodeTemplate: nodepools.UpdateNodeTemplate{
-				UserTags:              utils.ExpandResourceTags(d.Get("tags").(map[string]interface{})),
-				K8sTags:               buildResourceNodeK8sTags(d),
-				Taints:                buildResourceNodeTaint(d),
-				InitializedConditions: utils.ExpandToStringList(d.Get("initialized_conditions").([]interface{})),
+			NodeTemplate: nodes.Spec{
+				Flavor:      d.Get("flavor_id").(string),
+				Az:          d.Get("availability_zone").(string),
+				Login:       loginSpec,
+				RootVolume:  buildResourceNodeRootVolume(d),
+				DataVolumes: buildResourceNodeDataVolume(d),
+				Count:       1,
+				UserTags:    utils.ExpandResourceTags(d.Get("tags").(map[string]interface{})),
+				K8sTags:     buildResourceNodeK8sTags(d),
+				Taints:      buildResourceNodeTaint(d),
 			},
+			Type: d.Get("type").(string),
 		},
 	}
 	return &updateOpts, nil

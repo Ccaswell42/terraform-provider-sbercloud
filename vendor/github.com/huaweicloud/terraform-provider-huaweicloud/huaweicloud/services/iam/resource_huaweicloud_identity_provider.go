@@ -3,14 +3,8 @@ package iam
 import (
 	"context"
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
-
-	"github.com/hashicorp/go-multierror"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
 	"github.com/chnsz/golangsdk"
 	"github.com/chnsz/golangsdk/openstack/identity/federatedauth/mappings"
@@ -18,10 +12,16 @@ import (
 	"github.com/chnsz/golangsdk/openstack/identity/federatedauth/oidcconfig"
 	"github.com/chnsz/golangsdk/openstack/identity/federatedauth/protocols"
 	"github.com/chnsz/golangsdk/openstack/identity/federatedauth/providers"
+	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/common"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/fmtp"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/logp"
 )
 
 const (
@@ -55,12 +55,6 @@ func ResourceIdentityProvider() *schema.Resource {
 				Required:     true,
 				ForceNew:     true,
 				ValidateFunc: validation.StringInSlice([]string{protocolSAML, protocolOIDC}, false),
-			},
-			"sso_type": {
-				Type:     schema.TypeString,
-				Optional: true,
-				ForceNew: true,
-				Computed: true,
 			},
 			"status": {
 				Type:     schema.TypeBool,
@@ -116,12 +110,14 @@ func ResourceIdentityProvider() *schema.Resource {
 							Elem:     &schema.Schema{Type: schema.TypeString},
 						},
 						"response_type": {
-							Type:     schema.TypeString,
+							Type: schema.TypeString,
+							//Computed: true,
 							Optional: true,
 							Default:  "id_token",
 						},
 						"response_mode": {
-							Type:         schema.TypeString,
+							Type: schema.TypeString,
+							//Computed:     true,
 							Optional:     true,
 							Default:      "form_post",
 							ValidateFunc: validation.StringInSlice([]string{"fragment", "form_post"}, false),
@@ -174,6 +170,10 @@ func ResourceIdentityProvider() *schema.Resource {
 					},
 				},
 			},
+			"sso_type": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
 			"login_link": {
 				Type:     schema.TypeString,
 				Computed: true,
@@ -186,36 +186,36 @@ func resourceIdentityProviderCreate(ctx context.Context, d *schema.ResourceData,
 	conf := meta.(*config.Config)
 	client, err := conf.IAMNoVersionClient(conf.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client without version: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud IAM without version client: %s", err)
 	}
-
 	// Create a SAML protocol provider.
 	opts := providers.CreateProviderOpts{
 		Enabled:     d.Get("status").(bool),
 		Description: d.Get("description").(string),
-		SsoType:     d.Get("sso_type").(string),
 	}
 	name := d.Get("name").(string)
-	log.Printf("[DEBUG] Create identity options %s : %#v", name, opts)
+	logp.Printf("[DEBUG] Create identity options %s : %#v", name, opts)
 	provider, err := providers.Create(client, name, opts)
 	if err != nil {
-		return diag.Errorf("error creating identity provider: %s", err)
+		logp.Printf("[ERROR] Failed to create identity provider: %s", err)
+		return diag.FromErr(err)
 	}
-
 	d.SetId(provider.ID)
 
-	// Create default mapping and protocol
+	protocol := d.Get("protocol").(string)
+	// Create protocol and default mapping
 	err = createProtocol(client, d)
 	if err != nil {
-		return diag.Errorf("error creating provider protocol: %s", err)
+		logp.Printf("[ERROR] Error in creating provider protocol: %s,", err)
+		return fmtp.DiagErrorf("error in creating provider protocol: %s", err)
 	}
 
 	// Import metadata, metadata only worked on saml protocol providers
-	protocol := d.Get("protocol").(string)
 	if protocol == protocolSAML {
 		err = importMetadata(conf, d)
 		if err != nil {
-			return diag.Errorf("error importing matedata into identity provider: %s", err)
+			logp.Printf("[ERROR] Error importing matedata into identity provider: %s,", err)
+			return fmtp.DiagErrorf("error importing matedata into identity provider: %s", err)
 		}
 	} else if ac, ok := d.GetOk("access_config"); ok {
 		// Create access config for oidc provider.
@@ -237,11 +237,11 @@ func resourceIdentityProviderCreate(ctx context.Context, d *schema.ResourceData,
 			createAccessTypeOpts.ResponseType = accessConfig["response_type"].(string)
 			createAccessTypeOpts.ResponseMode = accessConfig["response_mode"].(string)
 		}
+		logp.Printf("[DEBUG] Create access type of provider: %#v", opts)
 
-		log.Printf("[DEBUG] Create access type of provider: %#v", opts)
 		_, err = oidcconfig.Create(client, provider.ID, createAccessTypeOpts)
 		if err != nil {
-			return diag.Errorf("error creating the provider access config: %s", err)
+			return fmtp.DiagErrorf("Error creating the provider access config: %s", err)
 		}
 	}
 
@@ -254,10 +254,9 @@ func importMetadata(conf *config.Config, d *schema.ResourceData) error {
 	if len(metadata) == 0 {
 		return nil
 	}
-
 	client, err := conf.IAMNoVersionClient(conf.GetRegion(d))
 	if err != nil {
-		return fmt.Errorf("error creating IAM client without version: %s", err)
+		return fmtp.Errorf("Error creating HuaweiCloud IAM client without version number: %s", err)
 	}
 
 	providerID := d.Get("name").(string)
@@ -267,33 +266,35 @@ func importMetadata(conf *config.Config, d *schema.ResourceData) error {
 	}
 	_, err = metadatas.Import(client, providerID, protocolSAML, opts)
 	if err != nil {
-		return fmt.Errorf("failed to import metadata: %s", err)
+		return fmtp.Errorf("failed to import metadata: %s", err)
 	}
 	return nil
 }
 
-// createProtocol create default mapping and protocol
+// createProtocol create protocol and default mapping
 func createProtocol(client *golangsdk.ServiceClient, d *schema.ResourceData) error {
 	providerID := d.Get("name").(string)
 
 	// Create default mapping
 	defaultConversionRules := getDefaultConversionOpts()
-	mappingID := generateMappingID(providerID)
-	_, err := mappings.Create(client, mappingID, *defaultConversionRules)
+	conversionRuleID := "mapping_" + providerID
+	_, err := mappings.Create(client, conversionRuleID, *defaultConversionRules)
 	if err != nil {
-		return fmt.Errorf("error in creating default conversion rule: %s", err)
+		return fmtp.Errorf("error in creating default conversion rule: %s", err)
 	}
 
 	// Create protocol
 	protocolName := d.Get("protocol").(string)
-	_, err = protocols.Create(client, providerID, protocolName, mappingID)
+	_, err = protocols.Create(client, providerID, protocolName, conversionRuleID)
 	if err != nil {
 		// If fails to create protocols, then delete the mapping.
-		log.Printf("[WARN] error creating protocol and the mapping will be deleted. Error: %s", err)
-		mErr := multierror.Append(err,
-			mappings.Delete(client, mappingID),
+		mErr := multierror.Append(
+			nil,
+			err,
+			mappings.Delete(client, conversionRuleID),
 		)
-		return fmt.Errorf("error creating identity provider protocol: %s", mErr.Error())
+		logp.Printf("[ERROR] Error creating protocol, and the mapping that has been created. Error: %s", mErr)
+		return fmtp.Errorf("error creating identity provider protocol: %s", mErr.Error())
 	}
 	return nil
 }
@@ -327,12 +328,12 @@ func resourceIdentityProviderRead(_ context.Context, d *schema.ResourceData, met
 	conf := meta.(*config.Config)
 	client, err := conf.IAMNoVersionClient(conf.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client without version: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud IAM client without version number: %s", err)
 	}
 
-	providerID := d.Id()
-	provider, err := providers.Get(client, providerID)
+	provider, err := providers.Get(client, d.Id())
 	if err != nil {
+		logp.Printf("[ERROR] Error obtaining identity provider: %s", err)
 		return common.CheckDeletedDiag(d, err, "error obtaining identity provider")
 	}
 
@@ -340,7 +341,7 @@ func resourceIdentityProviderRead(_ context.Context, d *schema.ResourceData, met
 	protocol := queryProtocolName(client, d)
 	url := generateLoginLink(conf.Cloud, conf.DomainID, provider.ID, protocol)
 
-	mErr := multierror.Append(nil,
+	mErr := multierror.Append(err,
 		d.Set("name", provider.ID),
 		d.Set("protocol", protocol),
 		d.Set("sso_type", provider.SsoType),
@@ -350,17 +351,17 @@ func resourceIdentityProviderRead(_ context.Context, d *schema.ResourceData, met
 	)
 
 	// Query and set conversion rules
-	mappingID := generateMappingID(providerID)
-	conversions, err := mappings.Get(client, mappingID)
+	conversionRuleID := "mapping_" + d.Id()
+	conversions, err := mappings.Get(client, conversionRuleID)
 	if err == nil {
-		conversionRules := flattenConversionRulesAttr(conversions)
+		conversionRules := buildConversionRulesAttr(conversions)
 		err = d.Set("conversion_rules", conversionRules)
 		mErr = multierror.Append(mErr, err)
 	}
 
 	// Query and set metadata of the protocol SAML provider
 	if protocol == protocolSAML {
-		r, err := metadatas.Get(client, providerID, protocolSAML)
+		r, err := metadatas.Get(client, d.Id(), protocolSAML)
 		if err == nil {
 			err = d.Set("metadata", utils.HashAndHexEncode(r.Data))
 			mErr = multierror.Append(mErr, err)
@@ -369,7 +370,7 @@ func resourceIdentityProviderRead(_ context.Context, d *schema.ResourceData, met
 
 	// Query and set access type of the protocol OIDC provider
 	if protocol == protocolOIDC {
-		accessType, err := oidcconfig.Get(client, providerID)
+		accessType, err := oidcconfig.Get(client, d.Id())
 		if err == nil {
 			scopes := strings.Split(accessType.Scope, scopeSpilt)
 			accessTypeConfig := []interface{}{
@@ -385,19 +386,21 @@ func resourceIdentityProviderRead(_ context.Context, d *schema.ResourceData, met
 				},
 			}
 
-			mErr = multierror.Append(mErr,
+			mErr = multierror.Append(
+				mErr,
 				d.Set("access_config", accessTypeConfig),
 			)
 		}
 	}
 
 	if err = mErr.ErrorOrNil(); err != nil {
-		return diag.Errorf("error setting identity provider attributes: %s", err)
+		logp.Printf("[ERROR] Error setting identity provider attributes %s: %s", d.Id(), err)
+		return fmtp.DiagErrorf("error setting identity provider attributes", err)
 	}
 	return nil
 }
 
-func flattenConversionRulesAttr(conversions *mappings.IdentityMapping) []interface{} {
+func buildConversionRulesAttr(conversions *mappings.IdentityMapping) []interface{} {
 	conversionRules := make([]interface{}, 0, len(conversions.Rules))
 	for _, v := range conversions.Rules {
 		localRules := make([]map[string]interface{}, 0, len(v.Local))
@@ -436,10 +439,6 @@ func flattenConversionRulesAttr(conversions *mappings.IdentityMapping) []interfa
 	return conversionRules
 }
 
-func generateMappingID(providerID string) string {
-	return "mapping_" + providerID
-}
-
 // generateLoginLink generate login link base on config.domainID.
 func generateLoginLink(host, domainID, id, protocol string) string {
 	// The domain name is the same as that of the console, it is converted according to the config.Cloud.
@@ -469,7 +468,7 @@ func resourceIdentityProviderUpdate(ctx context.Context, d *schema.ResourceData,
 	conf := meta.(*config.Config)
 	client, err := conf.IAMNoVersionClient(conf.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client without version: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud IAM client without version number: %s", err)
 	}
 
 	mErr := &multierror.Error{}
@@ -480,11 +479,11 @@ func resourceIdentityProviderUpdate(ctx context.Context, d *schema.ResourceData,
 			Enabled:     &status,
 			Description: &description,
 		}
+		logp.Printf("[DEBUG] Update identity options %s : %#v", d.Id(), opts)
 
-		log.Printf("[DEBUG] Update identity options %s : %#v", d.Id(), opts)
 		_, err = providers.Update(client, d.Id(), opts)
 		if err != nil {
-			e := fmt.Errorf("failed to update identity provider: %s", err)
+			e := fmtp.Errorf("Failed to update identity provider: %s", err)
 			mErr = multierror.Append(mErr, e)
 		}
 	}
@@ -504,7 +503,7 @@ func resourceIdentityProviderUpdate(ctx context.Context, d *schema.ResourceData,
 	}
 
 	if err = mErr.ErrorOrNil(); err != nil {
-		return diag.Errorf("error updating provider: %s", err)
+		return fmtp.DiagErrorf("error in updating provider: %s", err)
 	}
 
 	return resourceIdentityProviderRead(ctx, d, meta)
@@ -513,10 +512,10 @@ func resourceIdentityProviderUpdate(ctx context.Context, d *schema.ResourceData,
 func updateAccessConfig(client *golangsdk.ServiceClient, d *schema.ResourceData) error {
 	accessConfigArr := d.Get("access_config").([]interface{})
 	if len(accessConfigArr) == 0 {
-		return fmt.Errorf("the access_config block is required for the OIDC provider")
+		return fmtp.Errorf("the access_config is required for the OIDC provider.")
 	}
-
 	accessConfig := accessConfigArr[0].(map[string]interface{})
+
 	accessType := accessConfig["access_type"].(string)
 	opts := oidcconfig.UpdateOpenIDConnectConfigOpts{
 		AccessMode: accessType,
@@ -532,7 +531,7 @@ func updateAccessConfig(client *golangsdk.ServiceClient, d *schema.ResourceData)
 		opts.ResponseType = accessConfig["response_type"].(string)
 		opts.ResponseMode = accessConfig["response_mode"].(string)
 	}
-	log.Printf("[DEBUG] Update access type of provider: %#v", opts)
+	logp.Printf("[DEBUG] Update access type of provider: %#v", opts)
 	providerID := d.Id()
 	_, err := oidcconfig.Update(client, providerID, opts)
 	return err
@@ -542,13 +541,13 @@ func resourceIdentityProviderDelete(_ context.Context, d *schema.ResourceData, m
 	conf := meta.(*config.Config)
 	client, err := conf.IAMNoVersionClient(conf.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client without version: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud IAM client without version number: %s", err)
 	}
 
 	err = providers.Delete(client, d.Id())
 	if err != nil {
-		return common.CheckDeletedDiag(d, err, "error deleting IAM provider")
+		return common.CheckDeletedDiag(d, err, "Error deleting HuaweiCloud identity provider")
 	}
-
+	d.SetId("")
 	return nil
 }

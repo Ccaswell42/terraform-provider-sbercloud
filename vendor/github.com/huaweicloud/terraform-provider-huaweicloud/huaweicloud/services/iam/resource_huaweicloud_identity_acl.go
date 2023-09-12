@@ -4,18 +4,18 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
+	"time"
 
+	"github.com/chnsz/golangsdk/openstack/identity/v3.0/acl"
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-
-	"github.com/chnsz/golangsdk/openstack/identity/v3.0/acl"
-
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/helper/hashcode"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/fmtp"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/logp"
 )
 
 func ResourceIdentityACL() *schema.Resource {
@@ -24,6 +24,12 @@ func ResourceIdentityACL() *schema.Resource {
 		ReadContext:   resourceIdentityACLRead,
 		UpdateContext: resourceIdentityACLUpdate,
 		DeleteContext: resourceIdentityACLDelete,
+
+		Timeouts: &schema.ResourceTimeout{
+			Create: schema.DefaultTimeout(5 * time.Minute),
+			Update: schema.DefaultTimeout(5 * time.Minute),
+			Delete: schema.DefaultTimeout(3 * time.Minute),
+		},
 
 		Schema: map[string]*schema.Schema{
 			"type": {
@@ -80,7 +86,7 @@ func ResourceIdentityACL() *schema.Resource {
 func resourceIdentityACLCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	id := meta.(*config.Config).DomainID
 	if err := updateACLPolicy(d, meta, id); err != nil {
-		return diag.Errorf("error creating identity ACL: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud iam acl: %s", err)
 	}
 
 	d.SetId(id)
@@ -88,11 +94,10 @@ func resourceIdentityACLCreate(ctx context.Context, d *schema.ResourceData, meta
 }
 
 func resourceIdentityACLRead(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	mErr := &multierror.Error{}
-	cfg := meta.(*config.Config)
-	iamClient, err := cfg.IAMV3Client(cfg.GetRegion(d))
+	config := meta.(*config.Config)
+	iamClient, err := config.IAMV3Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud iam client: %s", err)
 	}
 
 	var res *acl.ACLPolicy
@@ -100,16 +105,19 @@ func resourceIdentityACLRead(_ context.Context, d *schema.ResourceData, meta int
 	case "console":
 		res, err = acl.ConsoleACLPolicyGet(iamClient, d.Id()).ConsoleExtract()
 		if err != nil {
-			return diag.Errorf("error fetching identity ACL for console access")
+			return fmtp.DiagErrorf("Error fetching identity acl for console access")
 		}
+		logp.Printf("[DEBUG] Retrieved HuaweiCloud identity acl: %#v", res)
 	default:
 		res, err = acl.APIACLPolicyGet(iamClient, d.Id()).APIExtract()
 		if err != nil {
-			return diag.Errorf("error fetching identity ACL for API access")
+			return fmtp.DiagErrorf("Error fetching identity acl for api access")
 		}
+		logp.Printf("[DEBUG] Retrieved HuaweiCloud identity acl: %#v", res)
 	}
 
-	log.Printf("[DEBUG] Retrieved identity ACL: %#v", res)
+	mErr := &multierror.Error{}
+
 	if len(res.AllowAddressNetmasks) > 0 {
 		addressNetmasks := make([]map[string]string, 0, len(res.AllowAddressNetmasks))
 		for _, v := range res.AllowAddressNetmasks {
@@ -134,7 +142,7 @@ func resourceIdentityACLRead(_ context.Context, d *schema.ResourceData, meta int
 	}
 
 	if err = mErr.ErrorOrNil(); err != nil {
-		return diag.Errorf("error setting identity ACL fields: %s", err)
+		return fmtp.DiagErrorf("error setting identity acl fields: %s", err)
 	}
 
 	return nil
@@ -144,7 +152,7 @@ func resourceIdentityACLUpdate(ctx context.Context, d *schema.ResourceData, meta
 	id := d.Id()
 	if d.HasChanges("ip_cidrs", "ip_ranges") {
 		if err := updateACLPolicy(d, meta, id); err != nil {
-			return diag.Errorf("error updating identity ACL: %s", err)
+			return fmtp.DiagErrorf("Error updating HuaweiCloud iam acl: %s", err)
 		}
 	}
 
@@ -152,10 +160,10 @@ func resourceIdentityACLUpdate(ctx context.Context, d *schema.ResourceData, meta
 }
 
 func resourceIdentityACLDelete(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	iamClient, err := cfg.IAMV3Client(cfg.GetRegion(d))
+	config := meta.(*config.Config)
+	iamClient, err := config.IAMV3Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud iam client: %s", err)
 	}
 
 	netmasksList := make([]acl.AllowAddressNetmasks, 0, 1)
@@ -170,23 +178,25 @@ func resourceIdentityACLDelete(_ context.Context, d *schema.ResourceData, meta i
 
 	switch d.Get("type").(string) {
 	case "console":
-		_, err = acl.ConsoleACLPolicyUpdate(iamClient, deleteOpts, d.Id()).ConsoleExtract()
+		_, err := acl.ConsoleACLPolicyUpdate(iamClient, deleteOpts, d.Id()).ConsoleExtract()
+		if err != nil {
+			return fmtp.DiagErrorf("Error updating HuaweiCloud iam acl: %s", err)
+		}
 	default:
-		_, err = acl.APIACLPolicyUpdate(iamClient, deleteOpts, d.Id()).APIExtract()
+		_, err := acl.APIACLPolicyUpdate(iamClient, deleteOpts, d.Id()).APIExtract()
+		if err != nil {
+			return fmtp.DiagErrorf("Error updating HuaweiCloud iam acl: %s", err)
+		}
 	}
-
-	if err != nil {
-		return diag.Errorf("error resetting identity ACL: %s", err)
-	}
-
+	d.SetId("")
 	return nil
 }
 
 func updateACLPolicy(d *schema.ResourceData, meta interface{}, id string) error {
-	cfg := meta.(*config.Config)
-	iamClient, err := cfg.IAMV3Client(cfg.GetRegion(d))
+	config := meta.(*config.Config)
+	iamClient, err := config.IAMV3Client(config.GetRegion(d))
 	if err != nil {
-		return fmt.Errorf("error creating IAM client: %s", err)
+		return fmtp.Errorf("Error creating HuaweiCloud iam client: %s", err)
 	}
 
 	updateOpts := &acl.ACLPolicy{}
@@ -219,8 +229,10 @@ func updateACLPolicy(d *schema.ResourceData, meta interface{}, id string) error 
 	case "api":
 		_, err = acl.APIACLPolicyUpdate(iamClient, updateOpts, id).APIExtract()
 	}
-
-	return err
+	if err != nil {
+		return fmtp.Errorf("Modify identity acl failed: %s", err)
+	}
+	return nil
 }
 
 func resourceACLPolicyCIDRHash(v interface{}) int {

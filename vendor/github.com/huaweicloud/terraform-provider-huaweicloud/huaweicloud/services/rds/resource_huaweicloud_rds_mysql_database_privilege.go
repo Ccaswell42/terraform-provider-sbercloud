@@ -1,47 +1,35 @@
-// ---------------------------------------------------------------
-// *** AUTO GENERATED CODE ***
-// @Product RDS
-// ---------------------------------------------------------------
-
 package rds
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
-	"math"
 	"strings"
 	"time"
 
+	"github.com/chnsz/golangsdk"
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-
-	"github.com/chnsz/golangsdk"
-	"github.com/chnsz/golangsdk/pagination"
+	v3 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/rds/v3"
+	rds "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/rds/v3/model"
 
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/common"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/helper/hashcode"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils"
 )
 
-func ResourceMysqlDatabasePrivilege() *schema.Resource {
+func ResourceRdsDatabasePrivilege() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceMysqlDatabasePrivilegeCreate,
-		UpdateContext: resourceMysqlDatabasePrivilegeUpdate,
-		ReadContext:   resourceMysqlDatabasePrivilegeRead,
-		DeleteContext: resourceMysqlDatabasePrivilegeDelete,
+		CreateContext: resourceRdsDatabasePrivilegeCreate,
+		DeleteContext: resourceRdsDatabasePrivilegeDelete,
+		ReadContext:   resourceRdsDatabasePrivilegeRead,
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
 
 		Timeouts: &schema.ResourceTimeout{
-			Create: schema.DefaultTimeout(30 * time.Minute),
-			Update: schema.DefaultTimeout(30 * time.Minute),
-			Delete: schema.DefaultTimeout(30 * time.Minute),
+			Create: schema.DefaultTimeout(10 * time.Minute),
+			Delete: schema.DefaultTimeout(10 * time.Minute),
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -52,358 +40,233 @@ func ResourceMysqlDatabasePrivilege() *schema.Resource {
 				Computed: true,
 			},
 			"instance_id": {
-				Type:        schema.TypeString,
-				Required:    true,
-				ForceNew:    true,
-				Description: `Specifies the ID of the RDS Mysql instance.`,
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: true,
 			},
 			"db_name": {
-				Type:        schema.TypeString,
-				Required:    true,
-				ForceNew:    true,
-				Description: `Specifies the database name.`,
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: true,
 			},
 			"users": {
-				Type:        schema.TypeSet,
-				Required:    true,
-				Description: `Specifies the account that associated with the database.`,
-				Elem:        mysqlDatabasePrivilegeUserSchema(),
-				Set:         resourceRdsMysqlDbPrivilegeHash,
+				Type:     schema.TypeSet,
+				Required: true,
+				ForceNew: true,
+				MaxItems: 50,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"name": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+						"readonly": {
+							Type:     schema.TypeBool,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+						},
+					},
+				},
 			},
 		},
 	}
 }
 
-func mysqlDatabasePrivilegeUserSchema() *schema.Resource {
-	sc := schema.Resource{
-		Schema: map[string]*schema.Schema{
-			"name": {
-				Type:        schema.TypeString,
-				Required:    true,
-				Description: `Specifies the username of the database account.`,
-			},
-			"readonly": {
-				Type:        schema.TypeBool,
-				Optional:    true,
-				Computed:    true,
-				Description: `Specifies the read-only permission.`,
-			},
-		},
+func buildUserOpts(rawUsers []interface{}) []rds.UserWithPrivilege {
+	if len(rawUsers) < 1 {
+		return nil
 	}
-	return &sc
+
+	usersOpts := make([]rds.UserWithPrivilege, len(rawUsers))
+	for i, v := range rawUsers {
+		user := v.(map[string]interface{})
+		usersOpts[i] = rds.UserWithPrivilege{
+			Name:     user["name"].(string),
+			Readonly: user["readonly"].(bool),
+		}
+	}
+	return usersOpts
 }
 
-func resourceMysqlDatabasePrivilegeCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
+func buildRevokeUserOpts(rawUsers []interface{}) []rds.RevokeRequestBodyUsers {
+	if len(rawUsers) < 1 {
+		return nil
+	}
 
-	// createMysqlDatabasePrivilege: create RDS Mysql database privilege.
-	createMysqlDatabasePrivilegeProduct := "rds"
-	createMysqlDatabasePrivilegeClient, err := cfg.NewServiceClient(createMysqlDatabasePrivilegeProduct, region)
+	usersOpts := make([]rds.RevokeRequestBodyUsers, len(rawUsers))
+	for i, v := range rawUsers {
+		user := v.(map[string]interface{})
+		usersOpts[i] = rds.RevokeRequestBodyUsers{
+			Name: user["name"].(string),
+		}
+	}
+	return usersOpts
+}
+
+func resourceRdsDatabasePrivilegeCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	c := meta.(*config.Config)
+	client, err := c.HcRdsV3Client(c.GetRegion(d))
 	if err != nil {
 		return diag.Errorf("error creating RDS client: %s", err)
 	}
 
-	err = createMysqlDatabasePrivilege(ctx, d, createMysqlDatabasePrivilegeClient, d.Get("users").(*schema.Set).List())
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
 	instanceId := d.Get("instance_id").(string)
 	dbName := d.Get("db_name").(string)
-	d.SetId(instanceId + "/" + dbName)
+	createOpts := rds.GrantRequest{
+		DbName: d.Get("db_name").(string),
+		Users:  buildUserOpts(d.Get("users").(*schema.Set).List()),
+	}
+	log.Printf("[DEBUG] Create RDS database privilege options: %#v", createOpts)
 
-	return resourceMysqlDatabasePrivilegeRead(ctx, d, meta)
+	privilegeReq := rds.AllowDbUserPrivilegeRequest{
+		InstanceId: instanceId,
+		Body:       &createOpts,
+	}
+
+	config.MutexKV.Lock(instanceId)
+	defer config.MutexKV.Unlock(instanceId)
+	config.MutexKV.Lock(dbName)
+	defer config.MutexKV.Unlock(dbName)
+	err = resource.RetryContext(ctx, d.Timeout(schema.TimeoutCreate), func() *resource.RetryError {
+		_, err = client.AllowDbUserPrivilege(&privilegeReq)
+		retryable, err := handleMultiOperationsError(err)
+		if retryable {
+			return resource.RetryableError(err)
+		}
+		if err != nil {
+			return resource.NonRetryableError(err)
+		}
+		return nil
+	})
+	if err != nil {
+		return diag.Errorf("error creating RDS database privilege: %s", err)
+	}
+
+	id := instanceId + "/" + dbName
+	d.SetId(id)
+	return resourceRdsDatabasePrivilegeRead(ctx, d, meta)
 }
 
-func resourceMysqlDatabasePrivilegeRead(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-
-	var mErr *multierror.Error
-
-	// getMysqlDatabasePrivilege: query RDS Mysql database privilege
-	var (
-		getMysqlDatabasePrivilegeHttpUrl = "v3/{project_id}/instances/{instance_id}/database/db_user"
-		getMysqlDatabasePrivilegeProduct = "rds"
-	)
-	getMysqlDatabasePrivilegeClient, err := cfg.NewServiceClient(getMysqlDatabasePrivilegeProduct, region)
+func resourceRdsDatabasePrivilegeRead(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	c := meta.(*config.Config)
+	client, err := c.HcRdsV3Client(c.GetRegion(d))
 	if err != nil {
 		return diag.Errorf("error creating RDS client: %s", err)
 	}
 
 	// Split instance_id and database from resource id
-	parts := strings.Split(d.Id(), "/")
+	parts := strings.SplitN(d.Id(), "/", 2)
 	if len(parts) != 2 {
-		return diag.Errorf("invalid id format, must be <instance_id>/<db_name>")
+		return diag.Errorf("invalid id format, must be <instance_id>/<database_name>")
 	}
 	instanceId := parts[0]
 	dbName := parts[1]
 
-	getMysqlDatabasePrivilegePath := getMysqlDatabasePrivilegeClient.Endpoint + getMysqlDatabasePrivilegeHttpUrl
-	getMysqlDatabasePrivilegePath = strings.ReplaceAll(getMysqlDatabasePrivilegePath, "{project_id}",
-		getMysqlDatabasePrivilegeClient.ProjectID)
-	getMysqlDatabasePrivilegePath = strings.ReplaceAll(getMysqlDatabasePrivilegePath, "{instance_id}", instanceId)
-
-	getMysqlDatabasePrivilegeQueryParams := buildGetMysqlDatabasePrivilegeQueryParams(dbName)
-	getMysqlDatabasePrivilegePath += getMysqlDatabasePrivilegeQueryParams
-
-	getMysqlDatabasePrivilegeResp, err := pagination.ListAllItems(
-		getMysqlDatabasePrivilegeClient,
-		"page",
-		getMysqlDatabasePrivilegePath,
-		&pagination.QueryOpts{MarkerField: ""})
-
+	users, err := QueryDatabaseUsers(client, instanceId, dbName)
 	if err != nil {
-		return common.CheckDeletedDiag(d, err, "error retrieving RDS Mysql database privilege")
+		return common.CheckDeletedDiag(d, err, "error listing RDS db authorized users")
 	}
 
-	getMysqlDatabasePrivilegeRespJson, err := json.Marshal(getMysqlDatabasePrivilegeResp)
-	if err != nil {
-		return diag.FromErr(err)
-	}
-	var getMysqlDatabasePrivilegeRespBody interface{}
-	err = json.Unmarshal(getMysqlDatabasePrivilegeRespJson, &getMysqlDatabasePrivilegeRespBody)
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
-	mErr = multierror.Append(
-		mErr,
-		d.Set("region", region),
+	mErr := multierror.Append(nil,
 		d.Set("instance_id", instanceId),
 		d.Set("db_name", dbName),
-		d.Set("users", flattenGetMysqlDatabasePrivilegeResponseBodyGetUser(getMysqlDatabasePrivilegeRespBody)),
+		d.Set("users", flattenUsers(users)),
 	)
+	if err = mErr.ErrorOrNil(); err != nil {
+		return diag.Errorf("error setting RDS db privilege fields: %s", err)
+	}
 
-	return diag.FromErr(mErr.ErrorOrNil())
+	return nil
 }
 
-func flattenGetMysqlDatabasePrivilegeResponseBodyGetUser(resp interface{}) []interface{} {
-	if resp == nil {
+func resourceRdsDatabasePrivilegeDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	c := meta.(*config.Config)
+	client, err := c.HcRdsV3Client(c.GetRegion(d))
+	if err != nil {
+		return diag.Errorf("error creating RDS client: %s", err)
+	}
+
+	var (
+		instanceId = d.Get("instance_id").(string)
+		dbName     = d.Get("db_name").(string)
+		opts       = rds.RevokeRequestBody{
+			DbName: dbName,
+			Users:  buildRevokeUserOpts(d.Get("users").(*schema.Set).List()),
+		}
+		deleteReq = rds.RevokeRequest{
+			InstanceId: instanceId,
+			Body:       &opts,
+		}
+	)
+	log.Printf("[DEBUG] Delete RDS database privilege options: %#v", opts)
+
+	config.MutexKV.Lock(instanceId)
+	defer config.MutexKV.Unlock(instanceId)
+	config.MutexKV.Lock(dbName)
+	defer config.MutexKV.Unlock(dbName)
+
+	err = resource.RetryContext(ctx, d.Timeout(schema.TimeoutDelete), func() *resource.RetryError {
+		_, err = client.Revoke(&deleteReq)
+		retryable, err := handleMultiOperationsError(err)
+		if retryable {
+			return resource.RetryableError(err)
+		}
+		if err != nil {
+			return resource.NonRetryableError(err)
+		}
+		return nil
+	})
+	if err != nil {
+		return diag.Errorf("error deleting RDS database privilege: %s", err)
+	}
+
+	return nil
+}
+
+func flattenUsers(users []rds.UserWithPrivilege) []map[string]interface{} {
+	if len(users) < 1 {
 		return nil
 	}
-	curJson := utils.PathSearch("users", resp, make([]interface{}, 0))
-	curArray := curJson.([]interface{})
-	rst := make([]interface{}, 0, len(curArray))
-	for _, v := range curArray {
-		rst = append(rst, map[string]interface{}{
-			"name":     utils.PathSearch("name", v, nil),
-			"readonly": utils.PathSearch("readonly", v, nil),
-		})
+
+	usersToSet := make([]map[string]interface{}, len(users))
+	for i, v := range users {
+		usersToSet[i] = map[string]interface{}{
+			"name":     v.Name,
+			"readonly": v.Readonly,
+		}
 	}
-	return rst
+	return usersToSet
 }
 
-func buildGetMysqlDatabasePrivilegeQueryParams(dbName string) string {
-	return fmt.Sprintf("?db-name=%s&page=1&limit=100", dbName)
-}
-
-func resourceMysqlDatabasePrivilegeUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-
-	// updateMysqlDatabasePrivilege: update RDS Mysql database privilege.
-	var (
-		updateMysqlDatabasePrivilegeProduct = "rds"
-	)
-	updateMysqlDatabasePrivilegeClient, err := cfg.NewServiceClient(updateMysqlDatabasePrivilegeProduct, region)
-	if err != nil {
-		return diag.Errorf("error creating RDS client: %s", err)
+func QueryDatabaseUsers(client *v3.RdsClient, instanceId, dbName string) ([]rds.UserWithPrivilege, error) {
+	request := rds.ListAuthorizedDbUsersRequest{
+		InstanceId: instanceId,
+		DbName:     dbName,
+		Limit:      int32(100),
+		Page:       int32(1),
 	}
 
-	oldRaws, newRaws := d.GetChange("users")
-	createUsers := newRaws.(*schema.Set).List()
-	deleteUsers := oldRaws.(*schema.Set).Difference(newRaws.(*schema.Set)).List()
-
-	if len(deleteUsers) > 0 {
-		err = deleteMysqlDatabasePrivilege(ctx, d, updateMysqlDatabasePrivilegeClient, deleteUsers)
+	// List all databases
+	allUsers := []rds.UserWithPrivilege{}
+	for {
+		response, err := client.ListAuthorizedDbUsers(&request)
 		if err != nil {
-			return diag.FromErr(err)
+			return nil, err
 		}
-	}
-
-	if len(createUsers) > 0 {
-		err = createMysqlDatabasePrivilege(ctx, d, updateMysqlDatabasePrivilegeClient, createUsers)
-		if err != nil {
-			return diag.FromErr(err)
-		}
-	}
-
-	return resourceMysqlDatabasePrivilegeRead(ctx, d, meta)
-}
-
-func resourceMysqlDatabasePrivilegeDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-
-	// deleteMysqlDatabasePrivilege: delete RDS Mysql database privilege
-	deleteMysqlDatabasePrivilegeProduct := "rds"
-	deleteMysqlDatabasePrivilegeClient, err := cfg.NewServiceClient(deleteMysqlDatabasePrivilegeProduct, region)
-	if err != nil {
-		return diag.Errorf("error creating RDS client: %s", err)
-	}
-
-	err = deleteMysqlDatabasePrivilege(ctx, d, deleteMysqlDatabasePrivilegeClient, d.Get("users").(*schema.Set).List())
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
-	return nil
-}
-
-func createMysqlDatabasePrivilege(ctx context.Context, d *schema.ResourceData, client *golangsdk.ServiceClient,
-	rawUsers interface{}) error {
-	// createMysqlDatabasePrivilege: create RDS Mysql database privilege.
-	createMysqlDatabasePrivilegeHttpUrl := "v3/{project_id}/instances/{instance_id}/db_privilege"
-
-	instanceId := d.Get("instance_id").(string)
-	dbName := d.Get("db_name").(string)
-
-	createMysqlDatabasePrivilegePath := client.Endpoint + createMysqlDatabasePrivilegeHttpUrl
-	createMysqlDatabasePrivilegePath = strings.ReplaceAll(createMysqlDatabasePrivilegePath, "{project_id}",
-		client.ProjectID)
-	createMysqlDatabasePrivilegePath = strings.ReplaceAll(createMysqlDatabasePrivilegePath, "{instance_id}",
-		instanceId)
-
-	createMysqlDatabasePrivilegeOpt := golangsdk.RequestOpts{
-		KeepResponseBody: true,
-	}
-
-	users := buildCreateMysqlDatabasePrivilegeRequestBodyUser(rawUsers)
-	start := 0
-	end := int(math.Min(50, float64(len(users))))
-	for start < end {
-		// A single request supports a maximum of 50 elements.
-		subUsers := users[start:end]
-		createMysqlDatabasePrivilegeOpt.JSONBody = utils.RemoveNil(buildMysqlDatabasePrivilegeBodyParams(dbName, subUsers))
-		log.Printf("[DEBUG] Create RDS Mysql database privilege options: %#v", createMysqlDatabasePrivilegeOpt)
-
-		retryFunc := func() (interface{}, bool, error) {
-			_, err := client.Request("POST", createMysqlDatabasePrivilegePath, &createMysqlDatabasePrivilegeOpt)
-			retry, err := handleMultiOperationsError(err)
-			return nil, retry, err
-		}
-		_, err := common.RetryContextWithWaitForState(&common.RetryContextWithWaitForStateParam{
-			Ctx:          ctx,
-			RetryFunc:    retryFunc,
-			WaitFunc:     rdsInstanceStateRefreshFunc(client, instanceId),
-			WaitTarget:   []string{"ACTIVE"},
-			Timeout:      d.Timeout(schema.TimeoutCreate),
-			DelayTimeout: 1 * time.Second,
-			PollInterval: 10 * time.Second,
-		})
-		if err != nil {
-			return fmt.Errorf("error creating RDS Mysql database privilege: %s", err)
-		}
-		start += 50
-		end = int(math.Min(float64(end+50), float64(len(users))))
-	}
-	return nil
-}
-
-func deleteMysqlDatabasePrivilege(ctx context.Context, d *schema.ResourceData, client *golangsdk.ServiceClient,
-	rawUsers interface{}) error {
-	// deleteMysqlDatabasePrivilege: delete RDS Mysql database privilege
-	deleteMysqlDatabasePrivilegeHttpUrl := "v3/{project_id}/instances/{instance_id}/db_privilege"
-
-	instanceId := d.Get("instance_id").(string)
-	dbName := d.Get("db_name").(string)
-
-	deleteMysqlDatabasePrivilegePath := client.Endpoint + deleteMysqlDatabasePrivilegeHttpUrl
-	deleteMysqlDatabasePrivilegePath = strings.ReplaceAll(deleteMysqlDatabasePrivilegePath, "{project_id}",
-		client.ProjectID)
-	deleteMysqlDatabasePrivilegePath = strings.ReplaceAll(deleteMysqlDatabasePrivilegePath, "{instance_id}",
-		instanceId)
-
-	deleteMysqlDatabasePrivilegeOpt := golangsdk.RequestOpts{
-		KeepResponseBody: true,
-	}
-
-	users := buildDeleteMysqlDatabasePrivilegeRequestBodyDeleteUser(rawUsers)
-	start := 0
-	end := int(math.Min(50, float64(len(users))))
-	for start < end {
-		// A single request supports a maximum of 50 elements.
-		subUsers := users[start:end]
-		deleteMysqlDatabasePrivilegeOpt.JSONBody = utils.RemoveNil(buildMysqlDatabasePrivilegeBodyParams(dbName, subUsers))
-		log.Printf("[DEBUG] Delete RDS Mysql database privilege options: %#v", deleteMysqlDatabasePrivilegeOpt)
-
-		retryFunc := func() (interface{}, bool, error) {
-			_, err := client.Request("DELETE", deleteMysqlDatabasePrivilegePath, &deleteMysqlDatabasePrivilegeOpt)
-			retry, err := handleMultiOperationsError(err)
-			return nil, retry, err
-		}
-		_, err := common.RetryContextWithWaitForState(&common.RetryContextWithWaitForStateParam{
-			Ctx:          ctx,
-			RetryFunc:    retryFunc,
-			WaitFunc:     rdsInstanceStateRefreshFunc(client, instanceId),
-			WaitTarget:   []string{"ACTIVE"},
-			Timeout:      d.Timeout(schema.TimeoutDelete),
-			DelayTimeout: 1 * time.Second,
-			PollInterval: 10 * time.Second,
-		})
-		if err != nil {
-			return fmt.Errorf("error deleting RDS Mysql database privilege: %s", err)
-		}
-		start += 50
-		end = int(math.Min(float64(end+50), float64(len(users))))
-	}
-	return nil
-}
-
-func buildMysqlDatabasePrivilegeBodyParams(dbName string, users interface{}) map[string]interface{} {
-	bodyParams := map[string]interface{}{
-		"db_name": dbName,
-		"users":   users,
-	}
-	return bodyParams
-}
-
-func buildCreateMysqlDatabasePrivilegeRequestBodyUser(rawParams interface{}) []map[string]interface{} {
-	if rawArray, ok := rawParams.([]interface{}); ok {
-		if len(rawArray) == 0 {
-			return nil
+		if response.Users == nil || len(*response.Users) == 0 {
+			break
 		}
 
-		rst := make([]map[string]interface{}, len(rawArray))
-		for i, v := range rawArray {
-			raw := v.(map[string]interface{})
-			rst[i] = map[string]interface{}{
-				"name":     utils.ValueIngoreEmpty(raw["name"]),
-				"readonly": utils.ValueIngoreEmpty(raw["readonly"]),
-			}
-		}
-		return rst
-	}
-	return nil
-}
-
-func buildDeleteMysqlDatabasePrivilegeRequestBodyDeleteUser(rawParams interface{}) []map[string]interface{} {
-	if rawArray, ok := rawParams.([]interface{}); ok {
-		if len(rawArray) == 0 {
-			return nil
-		}
-
-		rst := make([]map[string]interface{}, len(rawArray))
-		for i, v := range rawArray {
-			raw := v.(map[string]interface{})
-			rst[i] = map[string]interface{}{
-				"name": utils.ValueIngoreEmpty(raw["name"]),
-			}
-		}
-		return rst
-	}
-	return nil
-}
-
-func resourceRdsMysqlDbPrivilegeHash(v interface{}) int {
-	var buf bytes.Buffer
-	m := v.(map[string]interface{})
-
-	if m["name"] != nil {
-		buf.WriteString(fmt.Sprintf("%s-", m["name"].(string)))
+		users := *response.Users
+		allUsers = append(allUsers, users...)
+		request.Page += 1
 	}
 
-	return hashcode.String(buf.String())
+	if len(allUsers) < 1 {
+		return nil, golangsdk.ErrDefault404{}
+	}
+
+	return allUsers, nil
 }

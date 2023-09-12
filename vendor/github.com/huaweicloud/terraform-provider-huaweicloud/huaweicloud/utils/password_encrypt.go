@@ -7,8 +7,6 @@ import (
 	"io"
 
 	"github.com/GehirnInc/crypt"
-
-	// call init function to register sha512 crypt
 	_ "github.com/GehirnInc/crypt/sha512_crypt"
 )
 
@@ -22,10 +20,9 @@ func Salt(size int) ([]byte, error) {
 		return nil, fmt.Errorf("error generating salt: %s", err)
 	}
 
-	max := uint8(len(letters))
 	arc := uint8(0)
 	for i, x := range salt {
-		arc = x % max
+		arc = x % 62
 		salt[i] = letters[arc]
 	}
 	return salt, nil

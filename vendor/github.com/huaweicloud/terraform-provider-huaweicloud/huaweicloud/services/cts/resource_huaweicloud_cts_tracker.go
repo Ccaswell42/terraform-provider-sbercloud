@@ -3,8 +3,6 @@ package cts
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -13,19 +11,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
-	"github.com/chnsz/golangsdk"
-
-	client "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cts/v3"
 	cts "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cts/v3/model"
-
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/common"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/logp"
 )
 
 func ResourceCTSTracker() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceCTSTrackerCreate,
+		CreateContext: resourceCTSTrackerUpdate,
 		ReadContext:   resourceCTSTrackerRead,
 		UpdateContext: resourceCTSTrackerUpdate,
 		DeleteContext: resourceCTSTrackerDelete,
@@ -98,45 +93,7 @@ func ResourceCTSTracker() *schema.Resource {
 			},
 		},
 	}
-}
 
-func resourceCTSTrackerCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	ctsClient, err := cfg.HcCtsV3Client(cfg.GetRegion(d))
-	if err != nil {
-		return diag.Errorf("error creating CTS client: %s", err)
-	}
-
-	resourceID := "system"
-	tracker, err := getSystemTracker(ctsClient)
-	if err == nil && tracker != nil {
-		log.Print("[DEBUG] the system tracker already exists, update the configuration")
-		if tracker.Id != nil {
-			resourceID = *tracker.Id
-		}
-
-		d.SetId(resourceID)
-		return resourceCTSTrackerUpdate(ctx, d, meta)
-	}
-
-	// return the error with non-404 code
-	if _, ok := err.(golangsdk.ErrDefault404); !ok {
-		return diag.Errorf("error retrieving CTS tracker: %s", err)
-	}
-
-	if err := createSystemTracker(d, ctsClient); err != nil {
-		return diag.Errorf("error creating system CTS tracker: %s", err)
-	}
-
-	d.SetId(resourceID)
-
-	// disable status if necessary
-	if enabled := d.Get("enabled").(bool); !enabled {
-		if err := updateSystemTrackerStatus(ctsClient, "disabled"); err != nil {
-			return diag.Errorf("failed to disable CTS system tracker: %s", err)
-		}
-	}
-	return nil
 }
 
 func resourceCTSTrackerUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -147,51 +104,63 @@ func resourceCTSTrackerUpdate(ctx context.Context, d *schema.ResourceData, meta 
 	}
 
 	// update status firstly
-	if d.IsNewResource() || d.HasChange("enabled") {
-		status := "enabled"
-		if enabled := d.Get("enabled").(bool); !enabled {
-			status = "disabled"
-		}
+	status := "enabled"
+	if enabled := d.Get("enabled").(bool); !enabled {
+		status = "disabled"
+	}
 
-		if err := updateSystemTrackerStatus(ctsClient, status); err != nil {
-			return diag.Errorf("error updating CTS tracker status: %s", err)
-		}
+	enabledStatus := new(cts.UpdateTrackerRequestBodyStatus)
+	if err := enabledStatus.UnmarshalJSON([]byte(status)); err != nil {
+		return diag.Errorf("failed to parse status %s: %s", status, err)
+	}
+
+	trackerType := cts.GetUpdateTrackerRequestBodyTrackerTypeEnum().SYSTEM
+	statusOpts := cts.UpdateTrackerRequestBody{
+		TrackerName: "system",
+		TrackerType: trackerType,
+		Status:      enabledStatus,
+	}
+	statusReq := cts.UpdateTrackerRequest{
+		Body: &statusOpts,
+	}
+
+	_, err = ctsClient.UpdateTracker(&statusReq)
+	if err != nil {
+		return diag.Errorf("error updating CTS tracker status: %s", err)
 	}
 
 	// update other configurations
-	if d.IsNewResource() || d.HasChangeExcept("enabled") {
-		obsInfo := cts.TrackerObsInfo{
-			BucketName:     utils.String(d.Get("bucket_name").(string)),
-			FilePrefixName: utils.String(d.Get("file_prefix").(string)),
-		}
-
-		trackerType := cts.GetUpdateTrackerRequestBodyTrackerTypeEnum().SYSTEM
-		updateBody := cts.UpdateTrackerRequestBody{
-			TrackerName:       "system",
-			TrackerType:       trackerType,
-			IsLtsEnabled:      utils.Bool(d.Get("lts_enabled").(bool)),
-			IsSupportValidate: utils.Bool(d.Get("validate_file").(bool)),
-			ObsInfo:           &obsInfo,
-		}
-
-		var encryption bool
-		if v, ok := d.GetOk("kms_id"); ok {
-			encryption = true
-			updateBody.KmsId = utils.String(v.(string))
-		}
-		updateBody.IsSupportTraceFilesEncryption = &encryption
-
-		log.Printf("[DEBUG] updating CTS tracker options: %#v", updateBody)
-		updateOpts := cts.UpdateTrackerRequest{
-			Body: &updateBody,
-		}
-
-		_, err = ctsClient.UpdateTracker(&updateOpts)
-		if err != nil {
-			return diag.Errorf("error updating CTS tracker: %s", err)
-		}
+	obsInfo := cts.TrackerObsInfo{
+		BucketName:     utils.String(d.Get("bucket_name").(string)),
+		FilePrefixName: utils.String(d.Get("file_prefix").(string)),
 	}
 
+	updateBody := cts.UpdateTrackerRequestBody{
+		TrackerName:       "system",
+		TrackerType:       trackerType,
+		IsLtsEnabled:      utils.Bool(d.Get("lts_enabled").(bool)),
+		IsSupportValidate: utils.Bool(d.Get("validate_file").(bool)),
+		ObsInfo:           &obsInfo,
+	}
+
+	var encryption bool
+	if v, ok := d.GetOk("kms_id"); ok {
+		encryption = true
+		updateBody.KmsId = utils.String(v.(string))
+	}
+	updateBody.IsSupportTraceFilesEncryption = &encryption
+
+	logp.Printf("[DEBUG] updating CTS tracker options: %#v", updateBody)
+	updateOpts := cts.UpdateTrackerRequest{
+		Body: &updateBody,
+	}
+
+	_, err = ctsClient.UpdateTracker(&updateOpts)
+	if err != nil {
+		return diag.Errorf("error updating CTS tracker: %s", err)
+	}
+
+	d.Set("name", "system")
 	return resourceCTSTrackerRead(ctx, d, meta)
 }
 
@@ -203,15 +172,28 @@ func resourceCTSTrackerRead(_ context.Context, d *schema.ResourceData, meta inte
 		return diag.Errorf("error creating CTS client: %s", err)
 	}
 
-	ctsTracker, err := getSystemTracker(ctsClient)
+	name := d.Get("name").(string)
+	listOpts := &cts.ListTrackersRequest{
+		TrackerName: &name,
+	}
+
+	response, err := ctsClient.ListTrackers(listOpts)
 	if err != nil {
 		return common.CheckDeletedDiag(d, err, "error retrieving CTS tracker")
 	}
 
+	if response.Trackers == nil || len(*response.Trackers) == 0 {
+		d.SetId("")
+		return nil
+	}
+
+	allTrackers := *response.Trackers
+	ctsTracker := allTrackers[0]
+
 	if ctsTracker.Id != nil {
 		d.SetId(*ctsTracker.Id)
 	} else {
-		d.SetId("system")
+		d.SetId(name)
 	}
 
 	d.Set("region", region)
@@ -250,10 +232,6 @@ func resourceCTSTrackerDelete(_ context.Context, d *schema.ResourceData, meta in
 		return diag.Errorf("error creating CTS client: %s", err)
 	}
 
-	if err := updateSystemTrackerStatus(ctsClient, "disabled"); err != nil {
-		return diag.Errorf("failed to disable CTS system tracker: %s", err)
-	}
-
 	obsInfo := cts.TrackerObsInfo{
 		BucketName:     utils.String(""),
 		FilePrefixName: utils.String(""),
@@ -269,20 +247,20 @@ func resourceCTSTrackerDelete(_ context.Context, d *schema.ResourceData, meta in
 		ObsInfo:                       &obsInfo,
 	}
 
-	log.Printf("[DEBUG] updating CTS tracker to default configuration: %#v", updateBody)
+	logp.Printf("[DEBUG] updating CTS tracker to default configuration: %#v", updateBody)
 	updateOpts := cts.UpdateTrackerRequest{
 		Body: &updateBody,
 	}
 
 	_, err = ctsClient.UpdateTracker(&updateOpts)
 	if err != nil {
-		return diag.Errorf("falied to reset CTS system tracker: %s", err)
+		return diag.Errorf("error updating CTS tracker: %s", err)
 	}
 
 	return nil
 }
 
-func resourceCTSTrackerImportState(_ context.Context, d *schema.ResourceData, _ interface{}) ([]*schema.ResourceData, error) {
+func resourceCTSTrackerImportState(_ context.Context, d *schema.ResourceData, m interface{}) ([]*schema.ResourceData, error) {
 	name := d.Id()
 	d.Set("name", name)
 	return []*schema.ResourceData{d}, nil
@@ -291,78 +269,9 @@ func resourceCTSTrackerImportState(_ context.Context, d *schema.ResourceData, _ 
 func formatValue(i interface{}) string {
 	jsonRaw, err := json.Marshal(i)
 	if err != nil {
-		log.Printf("[WARN] failed to marshal %#v: %s", i, err)
+		logp.Printf("[WARN] failed to marshal %#v: %s", i, err)
 		return ""
 	}
 
 	return strings.Trim(string(jsonRaw), `"`)
-}
-
-func createSystemTracker(d *schema.ResourceData, ctsClient *client.CtsClient) error {
-	obsInfo := cts.TrackerObsInfo{
-		BucketName:     utils.String(d.Get("bucket_name").(string)),
-		FilePrefixName: utils.String(d.Get("file_prefix").(string)),
-	}
-
-	trackerType := cts.GetCreateTrackerRequestBodyTrackerTypeEnum().SYSTEM
-	reqBody := cts.CreateTrackerRequestBody{
-		TrackerName:       "system",
-		TrackerType:       trackerType,
-		IsLtsEnabled:      utils.Bool(d.Get("lts_enabled").(bool)),
-		IsSupportValidate: utils.Bool(d.Get("validate_file").(bool)),
-		ObsInfo:           &obsInfo,
-	}
-
-	if v, ok := d.GetOk("kms_id"); ok {
-		encryption := true
-		reqBody.KmsId = utils.String(v.(string))
-		reqBody.IsSupportTraceFilesEncryption = &encryption
-	}
-
-	log.Printf("[DEBUG] creating system CTS tracker options: %#v", reqBody)
-	createOpts := cts.CreateTrackerRequest{
-		Body: &reqBody,
-	}
-
-	_, err := ctsClient.CreateTracker(&createOpts)
-	return err
-}
-
-func getSystemTracker(ctsClient *client.CtsClient) (*cts.TrackerResponseBody, error) {
-	name := "system"
-	listOpts := &cts.ListTrackersRequest{
-		TrackerName: &name,
-	}
-
-	response, err := ctsClient.ListTrackers(listOpts)
-	if err != nil {
-		return nil, err
-	}
-
-	if response.Trackers == nil || len(*response.Trackers) == 0 {
-		return nil, golangsdk.ErrDefault404{}
-	}
-
-	allTrackers := *response.Trackers
-	return &allTrackers[0], nil
-}
-
-func updateSystemTrackerStatus(c *client.CtsClient, status string) error {
-	enabledStatus := new(cts.UpdateTrackerRequestBodyStatus)
-	if err := enabledStatus.UnmarshalJSON([]byte(status)); err != nil {
-		return fmt.Errorf("failed to parse status %s: %s", status, err)
-	}
-
-	trackerType := cts.GetUpdateTrackerRequestBodyTrackerTypeEnum().SYSTEM
-	statusOpts := cts.UpdateTrackerRequestBody{
-		TrackerName: "system",
-		TrackerType: trackerType,
-		Status:      enabledStatus,
-	}
-	statusReq := cts.UpdateTrackerRequest{
-		Body: &statusOpts,
-	}
-
-	_, err := c.UpdateTracker(&statusReq)
-	return err
 }

@@ -23,7 +23,7 @@ var multiCatalogKeys = map[string][]string{
 	"iam":          {"identity", "iam_no_version"},
 	"bss":          {"bssv2"},
 	"ecs":          {"ecsv21", "ecsv11"},
-	"evs":          {"evsv21", "evsv1"},
+	"evs":          {"evsv21"},
 	"cce":          {"ccev1", "cce_addon"},
 	"cci":          {"cciv1_bata"},
 	"vpc":          {"networkv2", "vpcv3", "fwv2"},
@@ -222,11 +222,6 @@ var allServiceCatalog = map[string]ServiceCatalog{
 	},
 
 	// ******* catalog for storage ******
-	"evsv1": {
-		Name:    "evs",
-		Version: "v1",
-		Product: "EVS",
-	},
 	"evs": {
 		Name:    "evs",
 		Version: "v2",
@@ -410,12 +405,12 @@ var allServiceCatalog = map[string]ServiceCatalog{
 	"gaussdb": {
 		Name:    "gaussdb",
 		Version: "v3",
-		Product: "GaussDBforMySQL",
+		Product: "GaussDB",
 	},
 	"opengauss": {
 		Name:    "gaussdb-opengauss",
 		Version: "v3",
-		Product: "GaussDB",
+		Product: "GaussDBforopenGauss",
 	},
 	"drs": {
 		Name:    "drs",
@@ -787,12 +782,6 @@ var allServiceCatalog = map[string]ServiceCatalog{
 		Name:    "projectman-ext",
 		Version: "v4",
 		Product: "ProjectMan",
-	},
-
-	"codearts_deploy": {
-		Name:    "codearts-deploy",
-		Version: "v2",
-		Product: "CodeArtsDeploy",
 	},
 
 	// catalog for Data Security Center

@@ -38,11 +38,10 @@ type DeleteResult struct {
 
 // Log group response
 type LogGroup struct {
-	ID           string            `json:"log_group_id"`
-	Name         string            `json:"log_group_name"`
-	CreationTime int64             `json:"creation_time"`
-	TTLinDays    int               `json:"ttl_in_days"`
-	Tags         map[string]string `json:"tag"`
+	ID           string `json:"log_group_id"`
+	Name         string `json:"log_group_name"`
+	CreationTime int64  `json:"creation_time"`
+	TTLinDays    int    `json:"ttl_in_days"`
 }
 
 // Log group list response

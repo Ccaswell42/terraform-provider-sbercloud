@@ -82,16 +82,12 @@ type Spec struct {
 	Taints []TaintSpec `json:"taints,omitempty"`
 	// The name of the created partition
 	Partition string `json:"partition,omitempty"`
-	// The initialized conditions
-	InitializedConditions []string `json:"initializedConditions,omitempty"`
 }
 
 // Gives the Nic spec of the node
 type NodeNicSpec struct {
 	// The primary Nic of the Node
 	PrimaryNic PrimaryNic `json:"primaryNic,omitempty"`
-	// The extension Nics of the Node
-	ExtNics []ExtNic `json:"extNics,omitempty"`
 }
 
 // Gives the Primary Nic of the node
@@ -100,15 +96,6 @@ type PrimaryNic struct {
 	SubnetId string `json:"subnetId,omitempty"`
 	// Fixed ips of the primary Nic
 	FixedIps []string `json:"fixedIps,omitempty"`
-}
-
-type ExtNic struct {
-	// The Subnet ID of the extension Nic
-	SubnetId string `json:"subnetId,omitempty"`
-	// Fixed ips of the extension Nic
-	FixedIps []string `json:"fixedIps,omitempty"`
-	// IP block of the extension Nic
-	IPBlock string `json:"ipBlock,omitempty"`
 }
 
 // TaintSpec to created nodes to configure anti-affinity
@@ -162,10 +149,6 @@ type VolumeSpec struct {
 	ExtendParam map[string]interface{} `json:"extendParam,omitempty"`
 	// Disk encryption information.
 	Metadata *VolumeMetadata `json:"metadata,omitempty"`
-	// DSS pool ID
-	ClusterID string `json:"cluster_id,omitempty"`
-	// DSS pool type, fixed to dss
-	ClusterType string `json:"cluster_type,omitempty"`
 }
 
 type VolumeMetadata struct {

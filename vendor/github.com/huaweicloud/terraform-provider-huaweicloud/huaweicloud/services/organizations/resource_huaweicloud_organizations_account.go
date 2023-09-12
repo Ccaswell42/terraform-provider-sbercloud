@@ -53,7 +53,13 @@ func ResourceAccount() *schema.Resource {
 				Computed:    true,
 				Description: `Specifies the ID of the root or organization unit in which you want to create a new account.`,
 			},
-			"tags": common.TagsSchema(),
+			"tags": {
+				Type:        schema.TypeMap,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Optional:    true,
+				Computed:    true,
+				Description: `Specifies the key/value to attach to the account.`,
+			},
 			"urn": {
 				Type:        schema.TypeString,
 				Computed:    true,
@@ -78,7 +84,7 @@ func resourceAccountCreate(ctx context.Context, d *schema.ResourceData, meta int
 
 	// createAccount: create Organizations account
 	var (
-		createAccountHttpUrl = "v1/organizations/accounts/add"
+		createAccountHttpUrl = "v1/organizations/accounts"
 		createAccountProduct = "organizations"
 	)
 	createAccountClient, err := cfg.NewServiceClient(createAccountProduct, "")
@@ -132,11 +138,9 @@ func resourceAccountCreate(ctx context.Context, d *schema.ResourceData, meta int
 		if err != nil {
 			return diag.FromErr(err)
 		}
-		if v.(string) != parentID {
-			err = moveAccount(createAccountClient, d.Id(), parentID, v.(string))
-			if err != nil {
-				return diag.Errorf("error moving Account %s to organization unit %s: %s", d.Id(), v.(string), err)
-			}
+		err = moveAccount(createAccountClient, d.Id(), parentID, v.(string))
+		if err != nil {
+			return diag.Errorf("error moving Account %s to organization unit %s: %s", d.Id(), v.(string), err)
 		}
 	}
 

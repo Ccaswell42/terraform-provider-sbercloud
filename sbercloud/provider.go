@@ -31,7 +31,6 @@ import (
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/iam"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/ims"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/lb"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/lts"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/mrs"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/nat"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/services/obs"
@@ -227,14 +226,14 @@ func Provider() *schema.Provider {
 			"sbercloud_elb_pools":              elb.DataSourcePools(),
 			"sbercloud_enterprise_project":     eps.DataSourceEnterpriseProject(),
 			"sbercloud_evs_volumes":            evs.DataSourceEvsVolumesV2(),
-			"sbercloud_identity_role":          iam.DataSourceIdentityRole(),
+			"sbercloud_identity_role":          iam.DataSourceIdentityRoleV3(),
 			"sbercloud_identity_custom_role":   iam.DataSourceIdentityCustomRole(),
 			"sbercloud_identity_group":         iam.DataSourceIdentityGroup(),
 			"sbercloud_identity_projects":      iam.DataSourceIdentityProjects(),
 			"sbercloud_identity_users":         iam.DataSourceIdentityUsers(),
 			"sbercloud_images_image":           ims.DataSourceImagesImageV2(),
 			"sbercloud_kms_key":                dew.DataSourceKmsKey(),
-			"sbercloud_kms_data_key":           dew.DataSourceKmsDataKeyV1(),
+			"sbercloud_kms_data_key":           huaweicloud.DataSourceKmsDataKeyV1(),
 			"sbercloud_lb_listeners":           lb.DataSourceListeners(),
 			"sbercloud_lb_loadbalancer":        lb.DataSourceELBV2Loadbalancer(),
 			"sbercloud_lb_certificate":         lb.DataSourceLBCertificateV2(),
@@ -265,7 +264,7 @@ func Provider() *schema.Provider {
 			"sbercloud_vpc_subnets":            vpc.DataSourceVpcSubnets(),
 			"sbercloud_vpc_subnet_ids":         vpc.DataSourceVpcSubnetIdsV1(),
 			// Legacy
-			"sbercloud_identity_role_v3": iam.DataSourceIdentityRole(),
+			"sbercloud_identity_role_v3": iam.DataSourceIdentityRoleV3(),
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -334,7 +333,7 @@ func Provider() *schema.Provider {
 			"sbercloud_identity_agency":                 iam.ResourceIAMAgencyV3(),
 			"sbercloud_identity_group":                  iam.ResourceIdentityGroup(),
 			"sbercloud_identity_group_membership":       iam.ResourceIdentityGroupMembership(),
-			"sbercloud_identity_project":                iam.ResourceIdentityProject(),
+			"sbercloud_identity_project":                iam.ResourceIdentityProjectV3(),
 			"sbercloud_identity_provider":               iam.ResourceIdentityProvider(),
 			"sbercloud_identity_provider_conversion":    iam.ResourceIAMProviderConversion(),
 			"sbercloud_identity_role":                   iam.ResourceIdentityRole(),
@@ -351,8 +350,8 @@ func Provider() *schema.Provider {
 			"sbercloud_lb_monitor":                      lb.ResourceMonitorV2(),
 			"sbercloud_lb_pool":                         lb.ResourcePoolV2(),
 			"sbercloud_lb_whitelist":                    lb.ResourceWhitelistV2(),
-			"sbercloud_lts_group":                       lts.ResourceLTSGroup(),
-			"sbercloud_lts_stream":                      lts.ResourceLTSStream(),
+			"sbercloud_lts_group":                       huaweicloud.ResourceLTSGroupV2(),
+			"sbercloud_lts_stream":                      huaweicloud.ResourceLTSStreamV2(),
 			"sbercloud_mapreduce_cluster":               mrs.ResourceMRSClusterV2(),
 			"sbercloud_mapreduce_job":                   mrs.ResourceMRSJobV2(),
 			"sbercloud_nat_dnat_rule":                   nat.ResourcePublicDnatRule(),

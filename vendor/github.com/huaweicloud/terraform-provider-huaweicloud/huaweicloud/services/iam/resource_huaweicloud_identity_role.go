@@ -3,18 +3,17 @@ package iam
 import (
 	"context"
 	"encoding/json"
-	"log"
 
+	"github.com/chnsz/golangsdk/openstack/identity/v3.0/policies"
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-
-	"github.com/chnsz/golangsdk/openstack/identity/v3.0/policies"
-
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/common"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/fmtp"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/logp"
 )
 
 func ResourceIdentityRole() *schema.Resource {
@@ -58,19 +57,18 @@ func ResourceIdentityRole() *schema.Resource {
 }
 
 func resourceIdentityRoleCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	identityClient, err := cfg.IAMV3Client(cfg.GetRegion(d))
+	config := meta.(*config.Config)
+	identityClient, err := config.IAMV3Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud identity client: %s", err)
 	}
 
 	policy := policies.Policy{}
 	policyDoc := d.Get("policy").(string)
 	err = json.Unmarshal([]byte(policyDoc), &policy)
 	if err != nil {
-		return diag.Errorf("error unmarshalling policy, please check the format of the policy document: %s", err)
+		return fmtp.DiagErrorf("Error unmarshalling policy, please check the format of the policy document: %s", err)
 	}
-
 	createOpts := policies.CreateOpts{
 		Name:        d.Get("name").(string),
 		Description: d.Get("description").(string),
@@ -78,32 +76,35 @@ func resourceIdentityRoleCreate(ctx context.Context, d *schema.ResourceData, met
 		Policy:      policy,
 	}
 
-	log.Printf("[DEBUG] Create Options: %#v", createOpts)
+	logp.Printf("[DEBUG] Create Options: %#v", createOpts)
+
 	role, err := policies.Create(identityClient, createOpts).Extract()
 	if err != nil {
-		return diag.Errorf("error creating IAM custom policy: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud Role: %s", err)
 	}
 
 	d.SetId(role.ID)
+
 	return resourceIdentityRoleRead(ctx, d, meta)
 }
 
 func resourceIdentityRoleRead(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	identityClient, err := cfg.IAMV3Client(cfg.GetRegion(d))
+	config := meta.(*config.Config)
+	identityClient, err := config.IAMV3Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud identity client: %s", err)
 	}
 
 	role, err := policies.Get(identityClient, d.Id()).Extract()
 	if err != nil {
-		return common.CheckDeletedDiag(d, err, "IAM custom policy")
+		return common.CheckDeletedDiag(d, err, "role")
 	}
 
-	log.Printf("[DEBUG] Retrieved IAM custom policy: %#v", role)
+	logp.Printf("[DEBUG] Retrieved HuaweiCloud Role: %#v", role)
+
 	policy, err := json.Marshal(role.Policy)
 	if err != nil {
-		return diag.Errorf("error marshaling policy: %s", err)
+		return fmtp.DiagErrorf("Error marshaling policy: %s", err)
 	}
 
 	mErr := multierror.Append(nil,
@@ -114,26 +115,25 @@ func resourceIdentityRoleRead(_ context.Context, d *schema.ResourceData, meta in
 		d.Set("policy", string(policy)),
 	)
 	if err = mErr.ErrorOrNil(); err != nil {
-		return diag.Errorf("error setting IAM custom policy fields: %s", err)
+		return fmtp.DiagErrorf("error setting identity role fields: %s", err)
 	}
 
 	return nil
 }
 
 func resourceIdentityRoleUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	identityClient, err := cfg.IAMV3Client(cfg.GetRegion(d))
+	config := meta.(*config.Config)
+	identityClient, err := config.IAMV3Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud identity client: %s", err)
 	}
 
 	policy := policies.Policy{}
 	policyDoc := d.Get("policy").(string)
 	err = json.Unmarshal([]byte(policyDoc), &policy)
 	if err != nil {
-		return diag.Errorf("error unmarshalling policy, please check the format of the policy document: %s", err)
+		return fmtp.DiagErrorf("Error unmarshalling policy, please check the format of the policy document: %s", err)
 	}
-
 	createOpts := policies.CreateOpts{
 		Name:        d.Get("name").(string),
 		Description: d.Get("description").(string),
@@ -141,25 +141,26 @@ func resourceIdentityRoleUpdate(ctx context.Context, d *schema.ResourceData, met
 		Policy:      policy,
 	}
 
-	log.Printf("[DEBUG] Update Options: %#v", createOpts)
+	logp.Printf("[DEBUG] Update Options: %#v", createOpts)
+
 	_, err = policies.Update(identityClient, d.Id(), createOpts).Extract()
 	if err != nil {
-		return diag.Errorf("error updating IAM custom policy: %s", err)
+		return fmtp.DiagErrorf("Error updating HuaweiCloud Role: %s", err)
 	}
 
 	return resourceIdentityRoleRead(ctx, d, meta)
 }
 
 func resourceIdentityRoleDelete(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	identityClient, err := cfg.IAMV3Client(cfg.GetRegion(d))
+	config := meta.(*config.Config)
+	identityClient, err := config.IAMV3Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud identity client: %s", err)
 	}
 
 	err = policies.Delete(identityClient, d.Id()).ExtractErr()
 	if err != nil {
-		return diag.Errorf("error deleting IAM custom policy: %s", err)
+		return fmtp.DiagErrorf("Error deleting HuaweiCloud Role: %s", err)
 	}
 
 	return nil

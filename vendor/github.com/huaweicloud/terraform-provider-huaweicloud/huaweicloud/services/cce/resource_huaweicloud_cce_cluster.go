@@ -2,7 +2,6 @@ package cce
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"reflect"
@@ -99,11 +98,6 @@ func ResourceCluster() *schema.Resource {
 				ForceNew: true,
 				Default:  "VirtualMachine",
 			},
-			"alias": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Computed: true,
-			},
 			"description": {
 				Type:     schema.TypeString,
 				Optional: true,
@@ -154,6 +148,7 @@ func ResourceCluster() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
+				ForceNew: true,
 			},
 			"eni_subnet_id": {
 				Type:        schema.TypeString,
@@ -237,7 +232,6 @@ func ResourceCluster() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 				ForceNew: true,
-				Computed: true,
 			},
 			"enterprise_project_id": {
 				Type:     schema.TypeString,
@@ -246,94 +240,14 @@ func ResourceCluster() *schema.Resource {
 				Computed: true,
 			},
 			"extend_param": {
-				Type:        schema.TypeMap,
-				Optional:    true,
-				ForceNew:    true,
-				Elem:        &schema.Schema{Type: schema.TypeString},
-				Description: "schema: Internal",
-			},
-			"extend_params": {
-				Type:     schema.TypeList,
+				Type:     schema.TypeMap,
 				Optional: true,
 				ForceNew: true,
-				ConflictsWith: []string{
-					"multi_az",
-				},
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"cluster_az": {
-							Type:     schema.TypeString,
-							Optional: true,
-							ForceNew: true,
-						},
-						"dss_master_volumes": {
-							Type:     schema.TypeString,
-							Optional: true,
-							ForceNew: true,
-						},
-						"fix_pool_mask": {
-							Type:     schema.TypeString,
-							Optional: true,
-							ForceNew: true,
-						},
-						"dec_master_flavor": {
-							Type:     schema.TypeString,
-							Optional: true,
-							ForceNew: true,
-						},
-						"docker_umask_mode": {
-							Type:     schema.TypeString,
-							Optional: true,
-							ForceNew: true,
-						},
-						"cpu_manager_policy": {
-							Type:     schema.TypeString,
-							Optional: true,
-							ForceNew: true,
-						},
-					},
-				},
+				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 			"hibernate": {
 				Type:     schema.TypeBool,
 				Optional: true,
-			},
-			"component_configurations": {
-				Type:     schema.TypeList,
-				Optional: true,
-				ForceNew: true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"name": {
-							Type:     schema.TypeString,
-							Required: true,
-							ForceNew: true,
-						},
-						"configurations": {
-							Type:     schema.TypeString,
-							Optional: true,
-							ForceNew: true,
-						},
-					},
-				},
-			},
-			"custom_san": {
-				Type:     schema.TypeList,
-				Elem:     &schema.Schema{Type: schema.TypeString},
-				Optional: true,
-				Computed: true,
-			},
-			"ipv6_enable": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				ForceNew: true,
-				Computed: true,
-			},
-			"support_istio": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				ForceNew: true,
-				Computed: true,
 			},
 			"tags": common.TagsForceNewSchema(),
 
@@ -358,10 +272,6 @@ func ResourceCluster() *schema.Resource {
 				}, true),
 			},
 			"status": {
-				Type:     schema.TypeString,
-				Computed: true,
-			},
-			"category": {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
@@ -443,65 +353,12 @@ func resourceClusterAnnotations(d *schema.ResourceData) map[string]string {
 	return m
 }
 
-func resourceClusterExtendParam(d *schema.ResourceData) map[string]interface{} {
+func resourceClusterExtendParam(d *schema.ResourceData, config *config.Config) map[string]interface{} {
 	extendParam := make(map[string]interface{})
 	if v, ok := d.GetOk("extend_param"); ok {
 		for key, val := range v.(map[string]interface{}) {
 			extendParam[key] = val.(string)
 		}
-	}
-
-	if multiAZ, ok := d.GetOk("multi_az"); ok && multiAZ.(bool) {
-		extendParam["clusterAZ"] = "multi_az"
-	}
-
-	return extendParam
-}
-
-func resourceClusterExtendParams(extendParamsRaw []interface{}) map[string]interface{} {
-	if len(extendParamsRaw) != 1 {
-		return nil
-	}
-
-	if extendParams, ok := extendParamsRaw[0].(map[string]interface{}); ok {
-		res := map[string]interface{}{
-			"clusterAZ":                      utils.ValueIngoreEmpty(extendParams["cluster_az"]),
-			"dssMasterVolumes":               utils.ValueIngoreEmpty(extendParams["dss_master_volumes"]),
-			"alpha.cce/fixPoolMask":          utils.ValueIngoreEmpty(extendParams["fix_pool_mask"]),
-			"decMasterFlavor":                utils.ValueIngoreEmpty(extendParams["dec_master_flavor"]),
-			"dockerUmaskMode":                utils.ValueIngoreEmpty(extendParams["docker_umask_mode"]),
-			"kubernetes.io/cpuManagerPolicy": utils.ValueIngoreEmpty(extendParams["cpu_manager_policy"]),
-		}
-
-		return res
-	}
-
-	return nil
-}
-
-func buildResourceClusterExtendParams(d *schema.ResourceData, cfg *config.Config) map[string]interface{} {
-	res := make(map[string]interface{})
-	extendParam := resourceClusterExtendParam(d)
-	extendParams := resourceClusterExtendParams(d.Get("extend_params").([]interface{}))
-
-	// defaults to use extend_params
-	if len(extendParam) != 0 {
-		for k, v := range extendParam {
-			res[k] = v
-		}
-	} else {
-		for k, v := range extendParams {
-			res[k] = v
-		}
-	}
-
-	if eip, ok := d.GetOk("eip"); ok {
-		res["clusterExternalIP"] = eip.(string)
-	}
-
-	epsID := cfg.GetEnterpriseProjectID(d)
-	if epsID != "" {
-		res["enterpriseProjectId"] = epsID
 	}
 
 	// assemble the charge info
@@ -514,21 +371,36 @@ func buildResourceClusterExtendParams(d *schema.ResourceData, cfg *config.Config
 		billingMode = v.(int)
 	}
 	if isPrePaid || billingMode == 1 {
-		res["isAutoRenew"] = "false"
-		res["isAutoPay"] = common.GetAutoPay(d)
+		extendParam["isAutoRenew"] = "false"
+		extendParam["isAutoPay"] = common.GetAutoPay(d)
 	}
 
 	if v, ok := d.GetOk("period_unit"); ok {
-		res["periodType"] = v.(string)
+		extendParam["periodType"] = v.(string)
 	}
 	if v, ok := d.GetOk("period"); ok {
-		res["periodNum"] = v.(int)
+		extendParam["periodNum"] = v.(int)
 	}
 	if v, ok := d.GetOk("auto_renew"); ok {
-		res["isAutoRenew"] = v.(string)
+		extendParam["isAutoRenew"] = v.(string)
 	}
 
-	return utils.RemoveNil(res)
+	if multi_az, ok := d.GetOk("multi_az"); ok && multi_az == true {
+		extendParam["clusterAZ"] = "multi_az"
+	}
+	if kube_proxy_mode, ok := d.GetOk("kube_proxy_mode"); ok {
+		extendParam["kubeProxyMode"] = kube_proxy_mode.(string)
+	}
+	if eip, ok := d.GetOk("eip"); ok {
+		extendParam["clusterExternalIP"] = eip.(string)
+	}
+
+	epsID := config.GetEnterpriseProjectID(d)
+	if epsID != "" {
+		extendParam["enterpriseProjectId"] = epsID
+	}
+
+	return extendParam
 }
 
 func resourceClusterMasters(d *schema.ResourceData) ([]clusters.MasterSpec, error) {
@@ -593,31 +465,6 @@ func buildEniNetworkOpts(eniSubnetID string) *clusters.EniNetworkSpec {
 	return &eniNetwork
 }
 
-func buildResourceClusterConfigurationsOverride(componentConfigurationsRaw []interface{}) ([]clusters.PackageConfiguration, error) {
-	if len(componentConfigurationsRaw) == 0 {
-		return nil, nil
-	}
-
-	res := make([]clusters.PackageConfiguration, len(componentConfigurationsRaw))
-	for i, v := range componentConfigurationsRaw {
-		if componentConfiguration, ok := v.(map[string]interface{}); ok {
-			res[i] = clusters.PackageConfiguration{
-				Name: componentConfiguration["name"].(string),
-			}
-
-			if configurations := componentConfiguration["configurations"].(string); configurations != "" {
-				err := json.Unmarshal([]byte(configurations), &res[i].Configurations)
-				if err != nil {
-					err = fmt.Errorf("error unmarshalling configurations of %s: %s", componentConfiguration["name"].(string), err)
-					return nil, err
-				}
-			}
-		}
-	}
-
-	return res, nil
-}
-
 func resourceClusterCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*config.Config)
 	cceClient, err := config.CceV3Client(config.GetRegion(d))
@@ -650,10 +497,8 @@ func resourceClusterCreate(ctx context.Context, d *schema.ResourceData, meta int
 		ApiVersion: "v3",
 		Metadata: clusters.CreateMetaData{
 			Name:        clusterName,
-			Alias:       d.Get("alias").(string),
 			Labels:      resourceClusterLabels(d),
 			Annotations: resourceClusterAnnotations(d)},
-
 		Spec: clusters.Spec{
 			Type:        d.Get("cluster_type").(string),
 			Flavor:      d.Get("flavor_id").(string),
@@ -675,13 +520,9 @@ func resourceClusterCreate(ctx context.Context, d *schema.ResourceData, meta int
 				AuthenticatingProxy: authenticating_proxy,
 			},
 			BillingMode:          billingMode,
-			ExtendParam:          buildResourceClusterExtendParams(d, config),
+			ExtendParam:          resourceClusterExtendParam(d, config),
 			KubernetesSvcIPRange: d.Get("service_network_cidr").(string),
 			ClusterTags:          resourceClusterTags(d),
-			CustomSan:            utils.ExpandToStringList(d.Get("custom_san").([]interface{})),
-			IPv6Enable:           d.Get("ipv6_enable").(bool),
-			KubeProxyMode:        d.Get("kube_proxy_mode").(string),
-			SupportIstio:         d.Get("support_istio").(bool),
 		},
 	}
 
@@ -694,13 +535,6 @@ func resourceClusterCreate(ctx context.Context, d *schema.ResourceData, meta int
 		return diag.FromErr(err)
 	}
 	createOpts.Spec.Masters = masters
-
-	componentConfigurations, err := buildResourceClusterConfigurationsOverride(
-		d.Get("component_configurations").([]interface{}))
-	if err != nil {
-		return diag.FromErr(err)
-	}
-	createOpts.Spec.ConfigurationsOverride = componentConfigurations
 
 	s, err := clusters.Create(cceClient, createOpts).Extract()
 	if err != nil {
@@ -796,7 +630,6 @@ func resourceClusterRead(_ context.Context, d *schema.ResourceData, meta interfa
 	mErr := multierror.Append(nil,
 		d.Set("region", config.GetRegion(d)),
 		d.Set("name", n.Metadata.Name),
-		d.Set("alias", n.Metadata.Alias),
 		d.Set("status", n.Status.Phase),
 		d.Set("flavor_id", n.Spec.Flavor),
 		d.Set("cluster_version", n.Spec.Version),
@@ -815,11 +648,6 @@ func resourceClusterRead(_ context.Context, d *schema.ResourceData, meta interfa
 		d.Set("service_network_cidr", n.Spec.KubernetesSvcIPRange),
 		d.Set("billing_mode", n.Spec.BillingMode),
 		d.Set("tags", utils.TagsToMap(n.Spec.ClusterTags)),
-		d.Set("ipv6_enable", n.Spec.IPv6Enable),
-		d.Set("kube_proxy_mode", n.Spec.KubeProxyMode),
-		d.Set("support_istio", n.Spec.SupportIstio),
-		d.Set("custom_san", n.Spec.CustomSan),
-		d.Set("category", n.Spec.Category),
 	)
 
 	if n.Spec.BillingMode != 0 {
@@ -917,31 +745,8 @@ func resourceClusterUpdate(ctx context.Context, d *schema.ResourceData, meta int
 
 	var updateOpts = clusters.UpdateOpts{}
 
-	if d.HasChange("alias") {
-		updateOpts.Metadata = &clusters.UpdateMetadata{
-			Alias: d.Get("alias").(string),
-		}
-	}
-
 	if d.HasChanges("description") {
 		updateOpts.Spec.Description = d.Get("description").(string)
-	}
-
-	if d.HasChange("container_network_cidr") {
-		o, n := d.GetChange("container_network_cidr")
-		oldCidr := o.(string)
-		newCidr := n.(string)
-
-		if len(newCidr) < len(oldCidr) || newCidr[0:len(oldCidr)] != oldCidr {
-			return diag.Errorf("error updating CCE cluster: " +
-				"the container_network_cidr can only be updated incrementally," +
-				" and the new value must contains the old value as a prefix")
-		}
-
-		// only incremental part can be contained in the request
-		updateOpts.Spec.ContainerNetwork = &clusters.UpdateContainerNetworkSpec{
-			Cidrs: buildContainerNetworkCidrsOpts(newCidr[len(oldCidr)+1:]),
-		}
 	}
 
 	if d.HasChanges("eni_subnet_id") {
@@ -952,10 +757,6 @@ func resourceClusterUpdate(ctx context.Context, d *schema.ResourceData, meta int
 		updateOpts.Spec.HostNetwork = &clusters.UpdateHostNetworkSpec{
 			SecurityGroup: d.Get("security_group_id").(string),
 		}
-	}
-
-	if d.HasChange("custom_san") {
-		updateOpts.Spec.CustomSan = utils.ExpandToStringList(d.Get("custom_san").([]interface{}))
 	}
 
 	if !reflect.DeepEqual(updateOpts, clusters.UpdateOpts{}) {
@@ -1033,16 +834,13 @@ func resourceClusterDelete(ctx context.Context, d *schema.ResourceData, meta int
 			deleteOpts.DeleteEvs = deleteOpt
 			deleteOpts.DeleteObs = deleteOpt
 			deleteOpts.DeleteSfs = deleteOpt
-			deleteOpts.DeleteSfs30 = deleteOpt
 		} else {
 			deleteOpts.DeleteEfs = d.Get("delete_efs").(string)
 			deleteOpts.DeleteENI = d.Get("delete_eni").(string)
 			deleteOpts.DeleteEvs = d.Get("delete_evs").(string)
 			deleteOpts.DeleteNet = d.Get("delete_net").(string)
 			deleteOpts.DeleteObs = d.Get("delete_obs").(string)
-			// delete_sfs indecates delete SFS and SFS3.0 together
 			deleteOpts.DeleteSfs = d.Get("delete_sfs").(string)
-			deleteOpts.DeleteSfs30 = d.Get("delete_sfs").(string)
 		}
 		err = clusters.DeleteWithOpts(cceClient, d.Id(), deleteOpts).ExtractErr()
 		if err != nil {

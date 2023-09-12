@@ -220,6 +220,7 @@ func ResourceRdsInstance() *schema.Resource {
 				Type:         schema.TypeString,
 				Optional:     true,
 				Computed:     true,
+				ForceNew:     true,
 				ValidateFunc: utils.ValidateIP,
 			},
 
@@ -244,16 +245,6 @@ func ResourceRdsInstance() *schema.Resource {
 
 			"ssl_enable": {
 				Type:     schema.TypeBool,
-				Optional: true,
-			},
-
-			"description": {
-				Type:     schema.TypeString,
-				Optional: true,
-			},
-
-			"dss_pool_id": {
-				Type:     schema.TypeString,
 				Optional: true,
 			},
 
@@ -401,7 +392,6 @@ func resourceRdsInstanceCreate(ctx context.Context, d *schema.ResourceData, meta
 		Ha:                  buildRdsInstanceHaReplicationMode(d),
 		UnchangeableParam:   buildRdsInstanceUnchangeableParam(d),
 		RestorePoint:        buildRdsInstanceRestorePoint(d),
-		DssPoolId:           d.Get("dss_pool_id").(string),
 	}
 
 	// PrePaid
@@ -461,13 +451,6 @@ func resourceRdsInstanceCreate(ctx context.Context, d *schema.ResourceData, meta
 	}
 	if _, err = stateConf.WaitForStateContext(ctx); err != nil {
 		return diag.Errorf("error waiting for RDS instance (%s) creation completed: %s", instanceID, err)
-	}
-
-	if v, ok := d.GetOk("description"); ok {
-		err = updateRdsInstanceDescription(client, instanceID, v.(string))
-		if err != nil {
-			return diag.FromErr(err)
-		}
 	}
 
 	if d.Get("ssl_enable").(bool) {
@@ -616,7 +599,6 @@ func resourceRdsInstanceRead(ctx context.Context, d *schema.ResourceData, meta i
 	log.Printf("[DEBUG] Retrieved RDS instance (%s): %#v", instanceID, instance)
 	d.Set("region", instance.Region)
 	d.Set("name", instance.Name)
-	d.Set("description", instance.Alias)
 	d.Set("status", instance.Status)
 	d.Set("created", instance.Created)
 	d.Set("ha_replication_mode", instance.Ha.ReplicationMode)
@@ -763,13 +745,6 @@ func resourceRdsInstanceUpdate(ctx context.Context, d *schema.ResourceData, meta
 		return diag.FromErr(err)
 	}
 
-	if d.HasChange("description") {
-		err = updateRdsInstanceDescription(client, instanceID, d.Get("description").(string))
-		if err != nil {
-			return diag.FromErr(err)
-		}
-	}
-
 	if err := updateRdsInstanceFlavor(ctx, d, config, client, instanceID, true); err != nil {
 		return diag.FromErr(err)
 	}
@@ -783,10 +758,6 @@ func resourceRdsInstanceUpdate(ctx context.Context, d *schema.ResourceData, meta
 	}
 
 	if err := updateRdsInstanceDBPort(ctx, d, client, instanceID); err != nil {
-		return diag.FromErr(err)
-	}
-
-	if err := updateRdsInstanceFixedIp(ctx, d, client, instanceID); err != nil {
 		return diag.FromErr(err)
 	}
 
@@ -826,7 +797,7 @@ func resourceRdsInstanceUpdate(ctx context.Context, d *schema.ResourceData, meta
 			retry, err := handleMultiOperationsError(err)
 			return nil, retry, err
 		}
-		_, err = common.RetryContextWithWaitForState(&common.RetryContextWithWaitForStateParam{
+		_, err := common.RetryContextWithWaitForState(&common.RetryContextWithWaitForStateParam{
 			Ctx:          ctx,
 			RetryFunc:    retryFunc,
 			WaitFunc:     rdsInstanceStateRefreshFunc(client, instanceID),
@@ -901,47 +872,13 @@ func resourceRdsInstanceDelete(ctx context.Context, d *schema.ResourceData, meta
 	id := d.Id()
 	log.Printf("[DEBUG] Deleting Instance %s", id)
 	if v, ok := d.GetOk("charging_mode"); ok && v.(string) == "prePaid" {
-		resourceIds := []string{id}
-		// the image of SQL server is come from cloud market, when creating an SQL server instance resource, two order
-		// will be created, one is instance order, the other is market image order, so it is needed to unsubscribe the
-		// two order when unsubscribe the instance
-		if strings.ToLower(d.Get("db.0.type").(string)) == "sqlserver" {
-			resourceIds = append(resourceIds, fmt.Sprintf("%s%s", id, ".marketimage"))
-		}
-		retryFunc := func() (interface{}, bool, error) {
-			err = common.UnsubscribePrePaidResource(d, config, resourceIds)
-			retry, err := handleDeletionError(err)
-			return nil, retry, err
-		}
-		_, err = common.RetryContextWithWaitForState(&common.RetryContextWithWaitForStateParam{
-			Ctx:          ctx,
-			RetryFunc:    retryFunc,
-			WaitFunc:     rdsInstanceStateRefreshFunc(client, id),
-			WaitTarget:   []string{"ACTIVE"},
-			Timeout:      d.Timeout(schema.TimeoutDelete),
-			DelayTimeout: 10 * time.Second,
-			PollInterval: 10 * time.Second,
-		})
-		if err != nil {
+		if err := common.UnsubscribePrePaidResource(d, config, []string{id}); err != nil {
 			return diag.Errorf("error unsubscribe RDS instance: %s", err)
 		}
 	} else {
-		retryFunc := func() (interface{}, bool, error) {
-			result := instances.Delete(client, id)
-			retry, err := handleDeletionError(result.Err)
-			return nil, retry, err
-		}
-		_, err = common.RetryContextWithWaitForState(&common.RetryContextWithWaitForStateParam{
-			Ctx:          ctx,
-			RetryFunc:    retryFunc,
-			WaitFunc:     rdsInstanceStateRefreshFunc(client, id),
-			WaitTarget:   []string{"ACTIVE"},
-			Timeout:      d.Timeout(schema.TimeoutDelete),
-			DelayTimeout: 10 * time.Second,
-			PollInterval: 10 * time.Second,
-		})
-		if err != nil {
-			return diag.FromErr(err)
+		result := instances.Delete(client, id)
+		if result.Err != nil {
+			return diag.FromErr(result.Err)
 		}
 	}
 
@@ -999,7 +936,10 @@ func GetRdsInstanceByID(client *golangsdk.ServiceClient, instanceID string) (*in
 }
 
 func buildRdsInstanceAvailabilityZone(d *schema.ResourceData) string {
-	azList := utils.ExpandToStringList(d.Get("availability_zone").([]interface{}))
+	azList := make([]string, len(d.Get("availability_zone").([]interface{})))
+	for i, az := range d.Get("availability_zone").([]interface{}) {
+		azList[i] = az.(string)
+	}
 	return strings.Join(azList, ",")
 }
 
@@ -1097,19 +1037,6 @@ func updateRdsInstanceName(d *schema.ResourceData, client *golangsdk.ServiceClie
 	r := instances.Rename(client, renameOpts, instanceID)
 	if r.Result.Err != nil {
 		return fmt.Errorf("error renaming RDS instance (%s): %s", instanceID, r.Err)
-	}
-
-	return nil
-}
-
-func updateRdsInstanceDescription(client *golangsdk.ServiceClient, instanceID, description string) error {
-	modifyAliasOpts := instances.ModifyAliasOpts{
-		Alias: description,
-	}
-	log.Printf("[DEBUG] Modify RDS instance description opts: %+v", modifyAliasOpts)
-	r := instances.ModifyAlias(client, modifyAliasOpts, instanceID)
-	if r.Err != nil {
-		return fmt.Errorf("error modify RDS instance (%s) description: %s", instanceID, r.Err)
 	}
 
 	return nil
@@ -1284,43 +1211,6 @@ func updateRdsInstanceDBPort(ctx context.Context, d *schema.ResourceData, client
 	}
 	if _, err = stateConf.WaitForState(); err != nil {
 		return fmt.Errorf("error waiting for RDS instance (%s) creation completed: %s", instanceID, err)
-	}
-
-	return nil
-}
-
-func updateRdsInstanceFixedIp(ctx context.Context, d *schema.ResourceData, client *golangsdk.ServiceClient,
-	instanceID string) error {
-	if !d.HasChange("fixed_ip") {
-		return nil
-	}
-
-	updateOpts := securities.DataIpOpts{
-		NewIp: d.Get("fixed_ip").(string),
-	}
-	log.Printf("[DEBUG] Update opts of RDS database fixed IP: %+v", updateOpts)
-
-	retryFunc := func() (interface{}, bool, error) {
-		res, err := securities.UpdateDataIp(client, instanceID, updateOpts).Extract()
-		retry, err := handleMultiOperationsError(err)
-		return res, retry, err
-	}
-	res, err := common.RetryContextWithWaitForState(&common.RetryContextWithWaitForStateParam{
-		Ctx:          ctx,
-		RetryFunc:    retryFunc,
-		WaitFunc:     rdsInstanceStateRefreshFunc(client, instanceID),
-		WaitTarget:   []string{"ACTIVE"},
-		Timeout:      d.Timeout(schema.TimeoutUpdate),
-		DelayTimeout: 1 * time.Second,
-		PollInterval: 10 * time.Second,
-	})
-	if err != nil {
-		return fmt.Errorf("error updating instance database fixed IP: %s ", err)
-	}
-	job := res.(*securities.WorkFlow)
-
-	if err := checkRDSInstanceJobFinish(client, job.WorkflowId, d.Timeout(schema.TimeoutUpdate)); err != nil {
-		return fmt.Errorf("error waiting for RDS instance (%s) update fixed IP completed: %s", instanceID, err)
 	}
 
 	return nil

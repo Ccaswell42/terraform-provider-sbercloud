@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -658,7 +657,9 @@ func bindEip(d *schema.ResourceData, client *golangsdk.ServiceClient, cfg *confi
 	return nil
 }
 
-func unbindEip(d *schema.ResourceData, client *golangsdk.ServiceClient, publicIpId, publicIp, httpUrl string) error {
+func unbindEip(d *schema.ResourceData, client *golangsdk.ServiceClient, publicIpId, publicIp,
+	httpUrl string) error {
+
 	getCbhInstancesPath := client.Endpoint + httpUrl
 	getCbhInstancesPath = strings.ReplaceAll(getCbhInstancesPath, "{project_id}", client.ProjectID)
 	getCbhInstancesPath = strings.ReplaceAll(getCbhInstancesPath, "{server_id}", d.Id())
@@ -672,19 +673,6 @@ func unbindEip(d *schema.ResourceData, client *golangsdk.ServiceClient, publicIp
 	unbindEipOpt.JSONBody = utils.RemoveNil(buildUpdateEipBodyParams(publicIpId, publicIp))
 	unbindEipResp, err := client.Request("POST", getCbhInstancesPath, &unbindEipOpt)
 	if err != nil {
-		if apiErr, ok := err.(golangsdk.ErrDefault400); ok {
-			var respBody interface{}
-			if jsonErr := json.Unmarshal(apiErr.Body, &respBody); jsonErr != nil {
-				return jsonErr
-			}
-			errCode := utils.PathSearch("error_code", respBody, "")
-			// these two error code indicate the eip has been unbound or deleted
-			if errCode == "CBH.10020010" || errCode == "CBH.10020009" {
-				log.Printf("[WARN] Failed to unbind EIP (ID: %s, IP: %s) from CBH instance(%s): %s", publicIpId,
-					publicIp, d.Id(), apiErr)
-				return nil
-			}
-		}
 		return fmt.Errorf("error unbind EIP from CBH instance: %s", err)
 	}
 	unbindEipRespBody, err := utils.FlattenResponse(unbindEipResp)
@@ -775,10 +763,7 @@ func resourceCBHInstanceRead(_ context.Context, d *schema.ResourceData, meta int
 		if publicIpId != nil && strings.TrimSpace(publicIpId.(string)) != "" {
 			publicIp, err = getPublicAddressById(d, cfg, strings.TrimSpace(publicIpId.(string)))
 			if err != nil {
-				if _, ok := err.(golangsdk.ErrDefault404); !ok {
-					return diag.FromErr(err)
-				}
-				publicIpId = ""
+				return diag.FromErr(err)
 			}
 		}
 		mErr = multierror.Append(
@@ -810,7 +795,7 @@ func getPublicAddressById(d *schema.ResourceData, cfg *config.Config, publicIpId
 	}
 	publicIp, err := eips.Get(networkingClient, publicIpId).Extract()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error get public IP by public IP ID %s, err: %s", publicIpId, err)
 	}
 	return publicIp.PublicAddress, nil
 }

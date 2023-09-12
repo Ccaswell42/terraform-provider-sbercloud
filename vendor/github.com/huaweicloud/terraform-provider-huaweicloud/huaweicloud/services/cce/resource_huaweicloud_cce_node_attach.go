@@ -65,83 +65,71 @@ func ResourceNodeAttach() *schema.Resource {
 				Optional:  true,
 				Sensitive: true,
 			},
-			"private_key": {
-				Type:      schema.TypeString,
-				Optional:  true,
-				Sensitive: true,
-			},
 			"max_pods": {
 				Type:     schema.TypeInt,
 				Optional: true,
+				ForceNew: true,
 			},
 			"lvm_config": {
 				Type:     schema.TypeString,
 				Optional: true,
-				ConflictsWith: []string{
-					"storage",
-				},
+				ForceNew: true,
 			},
 			"docker_base_size": {
 				Type:     schema.TypeInt,
 				Optional: true,
-			},
-			"runtime": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Computed: true,
+				ForceNew: true,
 			},
 			"nic_multi_queue": {
 				Type:        schema.TypeString,
 				Optional:    true,
+				ForceNew:    true,
 				Description: "schema: Internal",
 			},
 			"nic_threshold": {
 				Type:        schema.TypeString,
 				Optional:    true,
+				ForceNew:    true,
 				Description: "schema: Internal",
 			},
 			"image_id": {
 				Type:        schema.TypeString,
 				Optional:    true,
+				ForceNew:    true,
 				Description: "schema: Internal",
-			},
-			"system_disk_kms_key_id": {
-				Type:     schema.TypeString,
-				Optional: true,
 			},
 			"preinstall": {
 				Type:      schema.TypeString,
 				Optional:  true,
+				ForceNew:  true,
 				StateFunc: utils.DecodeHashAndHexEncode,
 			},
 			"postinstall": {
 				Type:      schema.TypeString,
 				Optional:  true,
+				ForceNew:  true,
 				StateFunc: utils.DecodeHashAndHexEncode,
 			},
-			"initialized_conditions": {
-				Type:     schema.TypeList,
-				Optional: true,
-				Computed: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
-			},
-			"storage": resourceNodeStorageUpdatableSchema(),
 			"taints": {
 				Type:     schema.TypeList,
 				Optional: true,
+				ForceNew: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"key": {
 							Type:     schema.TypeString,
 							Required: true,
+							ForceNew: true,
 						},
 						"value": {
 							Type:     schema.TypeString,
 							Required: true,
+							ForceNew: true,
 						},
 						"effect": {
 							Type:     schema.TypeString,
 							Required: true,
+							ForceNew: true,
 						},
 					}},
 			},
@@ -149,6 +137,7 @@ func ResourceNodeAttach() *schema.Resource {
 			"labels": {
 				Type:     schema.TypeMap,
 				Optional: true,
+				ForceNew: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 			//(node/ecs_tags)
@@ -181,10 +170,6 @@ func ResourceNodeAttach() *schema.Resource {
 							Elem:     &schema.Schema{Type: schema.TypeString},
 						},
 						"kms_key_id": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"dss_pool_id": {
 							Type:     schema.TypeString,
 							Computed: true,
 						},
@@ -227,10 +212,6 @@ func ResourceNodeAttach() *schema.Resource {
 							Type:     schema.TypeString,
 							Computed: true,
 						},
-						"dss_pool_id": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
 
 						// Internal parameters
 						"hw_passthrough": {
@@ -247,6 +228,10 @@ func ResourceNodeAttach() *schema.Resource {
 						},
 					},
 				},
+			},
+			"runtime": {
+				Type:     schema.TypeString,
+				Computed: true,
 			},
 			"ecs_group_id": {
 				Type:     schema.TypeString,
@@ -277,34 +262,26 @@ func ResourceNodeAttach() *schema.Resource {
 }
 
 func resourceNodeAttachServerConfig(d *schema.ResourceData) *nodes.ServerConfig {
-	var res nodes.ServerConfig
-	if common.HasFilledOpt(d, "tags") {
-		res.UserTags = buildResourceNodeTags(d)
-	}
-
-	if common.HasFilledOpt(d, "image_id") || common.HasFilledOpt(d, "system_disk_kms_key_id") {
-		rootVolume := nodes.RootVolume{
-			ImageID: d.Get("image_id").(string),
-			CmkID:   d.Get("system_disk_kms_key_id").(string),
+	if common.HasFilledOpt(d, "tags") || common.HasFilledOpt(d, "image_id") {
+		serverConfig := nodes.ServerConfig{
+			UserTags: buildResourceNodeTags(d),
 		}
-		res.RootVolume = &rootVolume
-	}
 
-	return &res
+		if v, ok := d.GetOk("image_id"); ok {
+			rootVolume := nodes.RootVolume{
+				ImageID: v.(string),
+			}
+			serverConfig.RootVolume = &rootVolume
+		}
+		return &serverConfig
+	}
+	return nil
 }
 
 func resourceNodeAttachVolumeConfig(d *schema.ResourceData) *nodes.VolumeConfig {
-	// only one of lvm_config and storage can be specified
 	if v, ok := d.GetOk("lvm_config"); ok {
 		volumeConfig := nodes.VolumeConfig{
 			LvmConfig: v.(string),
-		}
-		return &volumeConfig
-	}
-
-	if _, ok := d.GetOk("storage"); ok {
-		volumeConfig := nodes.VolumeConfig{
-			Storage: buildResourceNodeStorage(d),
 		}
 		return &volumeConfig
 	}
@@ -312,19 +289,13 @@ func resourceNodeAttachVolumeConfig(d *schema.ResourceData) *nodes.VolumeConfig 
 }
 
 func resourceNodeAttachRuntimeConfig(d *schema.ResourceData) *nodes.RuntimeConfig {
-	var res nodes.RuntimeConfig
-
 	if v, ok := d.GetOk("docker_base_size"); ok {
-		res.DockerBaseSize = v.(int)
-	}
-
-	if v, ok := d.GetOk("runtime"); ok {
-		res.Runtime = &nodes.RunTimeSpec{
-			Name: v.(string),
+		runtimeConfig := nodes.RuntimeConfig{
+			DockerBaseSize: v.(int),
 		}
+		return &runtimeConfig
 	}
-
-	return &res
+	return nil
 }
 
 func resourceNodeAttachK8sOptions(d *schema.ResourceData) *nodes.K8sOptions {
@@ -362,19 +333,17 @@ func buildNodeAttachCreateOpts(d *schema.ResourceData) (*nodes.AddOpts, error) {
 			{
 				ServerID: d.Get("server_id").(string),
 				Spec: nodes.AddNodeSpec{
-					Os:                    d.Get("os").(string),
-					Name:                  d.Get("name").(string),
-					ServerConfig:          resourceNodeAttachServerConfig(d),
-					VolumeConfig:          resourceNodeAttachVolumeConfig(d),
-					RuntimeConfig:         resourceNodeAttachRuntimeConfig(d),
-					K8sOptions:            resourceNodeAttachK8sOptions(d),
-					Lifecycle:             resourceNodeAttachLifecycle(d),
-					InitializedConditions: utils.ExpandToStringList(d.Get("initialized_conditions").([]interface{})),
+					Os:            d.Get("os").(string),
+					Name:          d.Get("name").(string),
+					ServerConfig:  resourceNodeAttachServerConfig(d),
+					VolumeConfig:  resourceNodeAttachVolumeConfig(d),
+					RuntimeConfig: resourceNodeAttachRuntimeConfig(d),
+					K8sOptions:    resourceNodeAttachK8sOptions(d),
+					Lifecycle:     resourceNodeAttachLifecycle(d),
 				},
 			},
 		},
 	}
-
 	log.Printf("[DEBUG] Add node Options: %#v", result)
 	// Add loginSpec here so it wouldn't go in the above log entry
 	loginSpec, err := buildResourceNodeLoginSpec(d)
@@ -448,19 +417,17 @@ func buildNodeAttachUpdateOpts(d *schema.ResourceData) (*nodes.ResetOpts, error)
 			{
 				NodeID: d.Id(),
 				Spec: nodes.AddNodeSpec{
-					Os:                    d.Get("os").(string),
-					Name:                  d.Get("name").(string),
-					ServerConfig:          resourceNodeAttachServerConfig(d),
-					VolumeConfig:          resourceNodeAttachVolumeConfig(d),
-					RuntimeConfig:         resourceNodeAttachRuntimeConfig(d),
-					K8sOptions:            resourceNodeAttachK8sOptions(d),
-					Lifecycle:             resourceNodeAttachLifecycle(d),
-					InitializedConditions: utils.ExpandToStringList(d.Get("initialized_conditions").([]interface{})),
+					Os:            d.Get("os").(string),
+					Name:          d.Get("name").(string),
+					ServerConfig:  resourceNodeAttachServerConfig(d),
+					VolumeConfig:  resourceNodeAttachVolumeConfig(d),
+					RuntimeConfig: resourceNodeAttachRuntimeConfig(d),
+					K8sOptions:    resourceNodeAttachK8sOptions(d),
+					Lifecycle:     resourceNodeAttachLifecycle(d),
 				},
 			},
 		},
 	}
-
 	log.Printf("[DEBUG] Add node Options: %#v", result)
 	// Add loginSpec here so it wouldn't go in the above log entry
 	loginSpec, err := buildResourceNodeLoginSpec(d)
@@ -473,48 +440,46 @@ func buildNodeAttachUpdateOpts(d *schema.ResourceData) (*nodes.ResetOpts, error)
 
 func resourceNodeAttachUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	cfg := meta.(*config.Config)
+	if d.HasChanges("os", "key_pair", "password") {
+		cceClient, err := cfg.CceV3Client(cfg.GetRegion(d))
+		if err != nil {
+			return diag.Errorf("error creating CCE client: %s", err)
+		}
+		clusterID := d.Get("cluster_id").(string)
 
-	if d.HasChanges("name", "tags", "key_pair", "password") {
-		return resourceNodeUpdate(ctx, d, cfg)
-	}
+		resetOpts, err := buildNodeAttachUpdateOpts(d)
+		if err != nil {
+			return diag.Errorf("error creating ResetOpts structure of 'Reset' method for CCE node attach: %s", err)
+		}
+		resp, err := nodes.Reset(cceClient, clusterID, resetOpts).ExtractAddNode()
+		if err != nil {
+			return diag.Errorf("error resetting node: %s", err)
+		}
 
-	cceClient, err := cfg.CceV3Client(cfg.GetRegion(d))
-	if err != nil {
-		return diag.Errorf("error creating CCE client: %s", err)
-	}
-	clusterID := d.Get("cluster_id").(string)
+		nodeID, err := getResourceIDFromJob(ctx, cceClient, resp.JobID, "CreateNode", "InstallNode",
+			d.Timeout(schema.TimeoutUpdate))
+		if err != nil {
+			return diag.FromErr(err)
+		}
+		d.SetId(nodeID)
 
-	resetOpts, err := buildNodeAttachUpdateOpts(d)
-	if err != nil {
-		return diag.Errorf("error creating ResetOpts structure of 'Reset' method for CCE node attach: %s", err)
-	}
-	resp, err := nodes.Reset(cceClient, clusterID, resetOpts).ExtractAddNode()
-	if err != nil {
-		return diag.Errorf("error resetting node: %s", err)
-	}
+		stateConf := &resource.StateChangeConf{
+			// The statuses of pending phase includes "Build" and "Installing".
+			Pending:      []string{"PENDING"},
+			Target:       []string{"COMPLETED"},
+			Refresh:      nodeStateRefreshFunc(cceClient, clusterID, nodeID, []string{"Active"}),
+			Timeout:      d.Timeout(schema.TimeoutUpdate),
+			Delay:        20 * time.Second,
+			PollInterval: 20 * time.Second,
+		}
+		_, err = stateConf.WaitForStateContext(ctx)
+		if err != nil {
+			return diag.Errorf("error waiting for CCE Node reset complete: %s", err)
+		}
 
-	nodeID, err := getResourceIDFromJob(ctx, cceClient, resp.JobID, "CreateNode", "InstallNode",
-		d.Timeout(schema.TimeoutUpdate))
-	if err != nil {
-		return diag.FromErr(err)
+		return resourceNodeRead(ctx, d, cfg)
 	}
-	d.SetId(nodeID)
-
-	stateConf := &resource.StateChangeConf{
-		// The statuses of pending phase includes "Build" and "Installing".
-		Pending:      []string{"PENDING"},
-		Target:       []string{"COMPLETED"},
-		Refresh:      nodeStateRefreshFunc(cceClient, clusterID, nodeID, []string{"Active"}),
-		Timeout:      d.Timeout(schema.TimeoutUpdate),
-		Delay:        20 * time.Second,
-		PollInterval: 20 * time.Second,
-	}
-	_, err = stateConf.WaitForStateContext(ctx)
-	if err != nil {
-		return diag.Errorf("error waiting for CCE Node reset complete: %s", err)
-	}
-
-	return resourceNodeRead(ctx, d, cfg)
+	return resourceNodeUpdate(ctx, d, cfg)
 }
 
 func resourceNodeAttachDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {

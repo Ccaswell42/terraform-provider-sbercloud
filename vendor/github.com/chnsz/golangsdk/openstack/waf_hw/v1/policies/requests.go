@@ -53,12 +53,11 @@ type UpdateOptsBuilder interface {
 
 // UpdateOpts contains all the values needed to update a policy.
 type UpdateOpts struct {
-	FullDetection       *bool         `json:"full_detection,omitempty"`
-	RobotAction         *Action       `json:"robot_action,omitempty"`
+	Name                string        `json:"name,omitempty"`
 	Action              *Action       `json:"action,omitempty"`
 	Options             *PolicyOption `json:"options,omitempty"`
-	Name                string        `json:"name,omitempty"`
 	Level               int           `json:"level,omitempty"`
+	FullDetection       *bool         `json:"full_detection,omitempty"`
 	EnterpriseProjectId string        `q:"enterprise_project_id" json:"-"`
 }
 

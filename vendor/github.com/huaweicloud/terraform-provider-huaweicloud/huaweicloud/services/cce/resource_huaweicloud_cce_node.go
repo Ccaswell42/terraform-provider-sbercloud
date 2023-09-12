@@ -88,9 +88,209 @@ func ResourceNode() *schema.Resource {
 				Optional:  true,
 				Sensitive: true,
 			},
-			"root_volume":  resourceNodeRootVolume(),
-			"data_volumes": resourceNodeDataVolume(),
-			"storage":      resourceNodeStorageSchema(),
+			"root_volume": {
+				Type:     schema.TypeList,
+				Required: true,
+				ForceNew: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"size": {
+							Type:     schema.TypeInt,
+							Required: true,
+							ForceNew: true,
+						},
+						"volumetype": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+						"hw_passthrough": {
+							Type:        schema.TypeBool,
+							Optional:    true,
+							ForceNew:    true,
+							Description: "schema: Internal",
+						},
+						"extend_param": {
+							Type:       schema.TypeString,
+							Optional:   true,
+							ForceNew:   true,
+							Deprecated: "use extend_params instead",
+						},
+						"extend_params": {
+							Type:     schema.TypeMap,
+							Optional: true,
+							ForceNew: true,
+							Computed: true,
+							Elem:     &schema.Schema{Type: schema.TypeString},
+						},
+						"kms_key_id": {
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+						},
+					},
+				},
+			},
+			"data_volumes": {
+				Type:     schema.TypeList,
+				Required: true,
+				ForceNew: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"size": {
+							Type:     schema.TypeInt,
+							Required: true,
+							ForceNew: true,
+						},
+						"volumetype": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+						"hw_passthrough": {
+							Type:        schema.TypeBool,
+							Optional:    true,
+							ForceNew:    true,
+							Description: "schema: Internal",
+						},
+						"extend_param": {
+							Type:       schema.TypeString,
+							Optional:   true,
+							ForceNew:   true,
+							Deprecated: "use extend_params instead",
+						},
+						"extend_params": {
+							Type:     schema.TypeMap,
+							Optional: true,
+							ForceNew: true,
+							Computed: true,
+							Elem:     &schema.Schema{Type: schema.TypeString},
+						},
+						"kms_key_id": {
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+						},
+					},
+				},
+			},
+			"storage": {
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"selectors": {
+							Type:     schema.TypeList,
+							Required: true,
+							ForceNew: true,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"name": {
+										Type:     schema.TypeString,
+										Required: true,
+										ForceNew: true,
+									},
+									"type": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+										Default:  "evs",
+									},
+									"match_label_size": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+									},
+									"match_label_volume_type": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+									},
+									"match_label_metadata_encrypted": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+									},
+									"match_label_metadata_cmkid": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+									},
+									"match_label_count": {
+										Type:     schema.TypeString,
+										Optional: true,
+										ForceNew: true,
+									},
+								},
+							},
+						},
+						"groups": {
+							Type:     schema.TypeList,
+							Required: true,
+							ForceNew: true,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"name": {
+										Type:     schema.TypeString,
+										Required: true,
+										ForceNew: true,
+									},
+									"cce_managed": {
+										Type:     schema.TypeBool,
+										Optional: true,
+										ForceNew: true,
+									},
+									"selector_names": {
+										Type:     schema.TypeList,
+										Required: true,
+										ForceNew: true,
+										Elem:     &schema.Schema{Type: schema.TypeString},
+									},
+									"virtual_spaces": {
+										Type:     schema.TypeList,
+										Required: true,
+										ForceNew: true,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"name": {
+													Type:     schema.TypeString,
+													Required: true,
+													ForceNew: true,
+												},
+												"size": {
+													Type:     schema.TypeString,
+													Required: true,
+													ForceNew: true,
+												},
+												"lvm_lv_type": {
+													Type:     schema.TypeString,
+													Optional: true,
+													ForceNew: true,
+												},
+												"lvm_path": {
+													Type:     schema.TypeString,
+													Optional: true,
+													ForceNew: true,
+												},
+												"runtime_lv_type": {
+													Type:     schema.TypeString,
+													Optional: true,
+													ForceNew: true,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 			"taints": {
 				Type:     schema.TypeList,
 				Optional: true,
@@ -251,32 +451,6 @@ func ResourceNode() *schema.Resource {
 				Optional: true,
 				ForceNew: true,
 			},
-			"extension_nics": {
-				Type:     schema.TypeList,
-				Optional: true,
-				ForceNew: true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"subnet_id": {
-							Type:     schema.TypeString,
-							Required: true,
-							ForceNew: true,
-						},
-					},
-				},
-			},
-			"dedicated_host_id": {
-				Type:     schema.TypeString,
-				Optional: true,
-				ForceNew: true,
-			},
-			"initialized_conditions": {
-				Type:     schema.TypeList,
-				Optional: true,
-				Computed: true,
-				ForceNew: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
-			},
 			"keep_ecs": {
 				Type:        schema.TypeBool,
 				Optional:    true,
@@ -361,6 +535,50 @@ func buildResourceNodeTags(d *schema.ResourceData) []tags.ResourceTag {
 	return utils.ExpandResourceTags(tagRaw)
 }
 
+func buildResourceNodeRootVolume(d *schema.ResourceData) nodes.VolumeSpec {
+	var root nodes.VolumeSpec
+	volumeRaw := d.Get("root_volume").([]interface{})
+	if len(volumeRaw) == 1 {
+		rawMap := volumeRaw[0].(map[string]interface{})
+		root.Size = rawMap["size"].(int)
+		root.VolumeType = rawMap["volumetype"].(string)
+		root.HwPassthrough = rawMap["hw_passthrough"].(bool)
+		root.ExtendParam = rawMap["extend_params"].(map[string]interface{})
+
+		if rawMap["kms_key_id"].(string) != "" {
+			metadata := nodes.VolumeMetadata{
+				SystemEncrypted: "1",
+				SystemCmkid:     rawMap["kms_key_id"].(string),
+			}
+			root.Metadata = &metadata
+		}
+	}
+
+	return root
+}
+
+func buildResourceNodeDataVolume(d *schema.ResourceData) []nodes.VolumeSpec {
+	volumeRaw := d.Get("data_volumes").([]interface{})
+	volumes := make([]nodes.VolumeSpec, len(volumeRaw))
+	for i, raw := range volumeRaw {
+		rawMap := raw.(map[string]interface{})
+		volumes[i] = nodes.VolumeSpec{
+			Size:          rawMap["size"].(int),
+			VolumeType:    rawMap["volumetype"].(string),
+			HwPassthrough: rawMap["hw_passthrough"].(bool),
+			ExtendParam:   rawMap["extend_params"].(map[string]interface{}),
+		}
+		if rawMap["kms_key_id"].(string) != "" {
+			metadata := nodes.VolumeMetadata{
+				SystemEncrypted: "1",
+				SystemCmkid:     rawMap["kms_key_id"].(string),
+			}
+			volumes[i].Metadata = &metadata
+		}
+	}
+	return volumes
+}
+
 func buildResourceNodeTaint(d *schema.ResourceData) []nodes.TaintSpec {
 	taintRaw := d.Get("taints").([]interface{})
 	taints := make([]nodes.TaintSpec, len(taintRaw))
@@ -385,6 +603,80 @@ func buildResourceNodeEipIDs(d *schema.ResourceData) []string {
 		id[i] = raw.(string)
 	}
 	return id
+}
+
+func buildResourceNodeStorage(d *schema.ResourceData) *nodes.StorageSpec {
+	v, ok := d.GetOk("storage")
+	if !ok {
+		return nil
+	}
+
+	var storageSpec nodes.StorageSpec
+	storageSpecRaw := v.([]interface{})
+	storageSpecRawMap := storageSpecRaw[0].(map[string]interface{})
+	storageSelectorSpecRaw := storageSpecRawMap["selectors"].([]interface{})
+	storageGroupSpecRaw := storageSpecRawMap["groups"].([]interface{})
+
+	var selectors []nodes.StorageSelectorsSpec
+	for _, s := range storageSelectorSpecRaw {
+		sMap := s.(map[string]interface{})
+		selector := nodes.StorageSelectorsSpec{
+			Name:        sMap["name"].(string),
+			StorageType: sMap["type"].(string),
+			MatchLabels: nodes.MatchLabelsSpec{
+				Size:              sMap["match_label_size"].(string),
+				VolumeType:        sMap["match_label_volume_type"].(string),
+				MetadataEncrypted: sMap["match_label_metadata_encrypted"].(string),
+				MetadataCmkid:     sMap["match_label_metadata_cmkid"].(string),
+				Count:             sMap["match_label_count"].(string),
+			},
+		}
+		selectors = append(selectors, selector)
+	}
+	storageSpec.StorageSelectors = selectors
+
+	var groups []nodes.StorageGroupsSpec
+	for _, g := range storageGroupSpecRaw {
+		gMap := g.(map[string]interface{})
+		group := nodes.StorageGroupsSpec{
+			Name:          gMap["name"].(string),
+			CceManaged:    gMap["cce_managed"].(bool),
+			SelectorNames: utils.ExpandToStringList(gMap["selector_names"].([]interface{})),
+		}
+
+		virtualSpacesRaw := gMap["virtual_spaces"].([]interface{})
+		virtualSpaces := make([]nodes.VirtualSpacesSpec, 0, len(virtualSpacesRaw))
+		for _, v := range virtualSpacesRaw {
+			virtualSpaceMap := v.(map[string]interface{})
+			virtualSpace := nodes.VirtualSpacesSpec{
+				Name: virtualSpaceMap["name"].(string),
+				Size: virtualSpaceMap["size"].(string),
+			}
+
+			if virtualSpaceMap["lvm_lv_type"].(string) != "" {
+				lvmConfig := nodes.LVMConfigSpec{
+					LvType: virtualSpaceMap["lvm_lv_type"].(string),
+					Path:   virtualSpaceMap["lvm_path"].(string),
+				}
+				virtualSpace.LVMConfig = &lvmConfig
+			}
+
+			if virtualSpaceMap["runtime_lv_type"].(string) != "" {
+				runtimeConfig := nodes.RuntimeConfigSpec{
+					LvType: virtualSpaceMap["runtime_lv_type"].(string),
+				}
+				virtualSpace.RuntimeConfig = &runtimeConfig
+			}
+
+			virtualSpaces = append(virtualSpaces, virtualSpace)
+		}
+		group.VirtualSpaces = virtualSpaces
+
+		groups = append(groups, group)
+	}
+
+	storageSpec.StorageGroups = groups
+	return &storageSpec
 }
 
 func buildResourceNodePublicIP(d *schema.ResourceData) nodes.PublicIPSpec {
@@ -419,19 +711,6 @@ func buildResourceNodeNicSpec(d *schema.ResourceData) nodes.NodeNicSpec {
 
 	if v, ok := d.GetOk("fixed_ip"); ok {
 		res.PrimaryNic.FixedIps = []string{v.(string)}
-	}
-
-	if v, ok := d.GetOk("extension_nics"); ok {
-		nicsRaw := v.([]interface{})
-		extNics := make([]nodes.ExtNic, len(nicsRaw))
-		for i, v := range nicsRaw {
-			nic := v.(map[string]interface{})
-			extNics[i] = nodes.ExtNic{
-				SubnetId: nic["subnet_id"].(string),
-			}
-		}
-
-		res.ExtNics = extNics
 	}
 
 	return res
@@ -499,23 +778,21 @@ func resourceNodeCreate(ctx context.Context, d *schema.ResourceData, meta interf
 			Annotations: buildResourceNodeAnnotations(d),
 		},
 		Spec: nodes.Spec{
-			Flavor:                d.Get("flavor_id").(string),
-			Az:                    d.Get("availability_zone").(string),
-			Os:                    d.Get("os").(string),
-			RootVolume:            buildResourceNodeRootVolume(d),
-			DataVolumes:           buildResourceNodeDataVolume(d),
-			Storage:               buildResourceNodeStorage(d),
-			PublicIP:              buildResourceNodePublicIP(d),
-			BillingMode:           billingMode,
-			Count:                 1,
-			NodeNicSpec:           buildResourceNodeNicSpec(d),
-			EcsGroupID:            d.Get("ecs_group_id").(string),
-			ExtendParam:           buildExtendParams(d),
-			Taints:                buildResourceNodeTaint(d),
-			K8sTags:               buildResourceNodeK8sTags(d),
-			UserTags:              buildResourceNodeTags(d),
-			DedicatedHostID:       d.Get("dedicated_host_id").(string),
-			InitializedConditions: utils.ExpandToStringList(d.Get("initialized_conditions").([]interface{})),
+			Flavor:      d.Get("flavor_id").(string),
+			Az:          d.Get("availability_zone").(string),
+			Os:          d.Get("os").(string),
+			RootVolume:  buildResourceNodeRootVolume(d),
+			DataVolumes: buildResourceNodeDataVolume(d),
+			Storage:     buildResourceNodeStorage(d),
+			PublicIP:    buildResourceNodePublicIP(d),
+			BillingMode: billingMode,
+			Count:       1,
+			NodeNicSpec: buildResourceNodeNicSpec(d),
+			EcsGroupID:  d.Get("ecs_group_id").(string),
+			ExtendParam: buildExtendParams(d),
+			Taints:      buildResourceNodeTaint(d),
+			K8sTags:     buildResourceNodeK8sTags(d),
+			UserTags:    buildResourceNodeTags(d),
 		},
 	}
 
@@ -615,7 +892,6 @@ func resourceNodeRead(_ context.Context, d *schema.ResourceData, meta interface{
 		d.Set("status", s.Status.Phase),
 		d.Set("root_volume", flattenResourceNodeRootVolume(s.Spec.RootVolume)),
 		d.Set("data_volumes", flattenResourceNodeDataVolume(s.Spec.DataVolumes)),
-		d.Set("initialized_conditions", s.Spec.InitializedConditions),
 	)
 
 	if s.Spec.BillingMode != 0 {
@@ -650,6 +926,46 @@ func resourceNodeRead(_ context.Context, d *schema.ResourceData, meta interface{
 		return diag.Errorf("error setting CCE Node fields: %s", err)
 	}
 	return nil
+}
+
+func flattenResourceNodeRootVolume(rootVolume nodes.VolumeSpec) []map[string]interface{} {
+	res := []map[string]interface{}{
+		{
+			"size":           rootVolume.Size,
+			"volumetype":     rootVolume.VolumeType,
+			"hw_passthrough": rootVolume.HwPassthrough,
+			"extend_params":  rootVolume.ExtendParam,
+			"extend_param":   "",
+		},
+	}
+	if rootVolume.Metadata != nil {
+		res[0]["kms_key_id"] = rootVolume.Metadata.SystemCmkid
+	}
+
+	return res
+}
+
+func flattenResourceNodeDataVolume(dataVolumes []nodes.VolumeSpec) []map[string]interface{} {
+	if len(dataVolumes) == 0 {
+		return nil
+	}
+
+	res := make([]map[string]interface{}, len(dataVolumes))
+	for i, v := range dataVolumes {
+		res[i] = map[string]interface{}{
+			"size":           v.Size,
+			"volumetype":     v.VolumeType,
+			"hw_passthrough": v.HwPassthrough,
+			"extend_params":  v.ExtendParam,
+			"extend_param":   "",
+		}
+
+		if v.Metadata != nil {
+			res[i]["kms_key_id"] = v.Metadata.SystemCmkid
+		}
+	}
+
+	return res
 }
 
 func resourceNodeUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {

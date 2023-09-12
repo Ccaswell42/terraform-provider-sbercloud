@@ -2,21 +2,21 @@ package eip
 
 import (
 	"context"
-	"log"
 	"time"
+
+	"github.com/chnsz/golangsdk"
+	bandwidthsv1 "github.com/chnsz/golangsdk/openstack/networking/v1/bandwidths"
+	"github.com/chnsz/golangsdk/openstack/networking/v2/bandwidths"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/common"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/fmtp"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/logp"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-
-	"github.com/chnsz/golangsdk"
-	"github.com/chnsz/golangsdk/openstack/common/structs"
-	bandwidthsv1 "github.com/chnsz/golangsdk/openstack/networking/v1/bandwidths"
-	"github.com/chnsz/golangsdk/openstack/networking/v2/bandwidths"
-
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/common"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 func ResourceVpcBandWidthV2() *schema.Resource {
@@ -47,14 +47,18 @@ func ResourceVpcBandWidthV2() *schema.Resource {
 				Required: true,
 			},
 			"size": {
-				Type:     schema.TypeInt,
-				Required: true,
+				Type:         schema.TypeInt,
+				Required:     true,
+				ValidateFunc: validation.IntBetween(5, 2000),
 			},
 			"charge_mode": {
 				Type:     schema.TypeString,
 				Optional: true,
 				ForceNew: true,
 				Computed: true,
+				ValidateFunc: validation.StringInSlice([]string{
+					"bandwidth", "95peak_plus",
+				}, false),
 			},
 			"enterprise_project_id": {
 				Type:     schema.TypeString,
@@ -62,10 +66,6 @@ func ResourceVpcBandWidthV2() *schema.Resource {
 				ForceNew: true,
 				Computed: true,
 			},
-			"charging_mode": common.SchemaChargingMode(nil),
-			"period_unit":   common.SchemaPeriodUnit(nil),
-			"period":        common.SchemaPeriod(nil),
-			"auto_renew":    common.SchemaAutoRenewUpdatable(nil),
 
 			"share_type": {
 				Type:     schema.TypeString,
@@ -112,17 +112,11 @@ func publicIPListComputedSchema() *schema.Schema {
 }
 
 func resourceVpcBandWidthV2Create(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-
-	networkingClient, err := cfg.NetworkingV2Client(region)
+	config := meta.(*config.Config)
+	networkingClient, err := config.NetworkingV2Client(config.GetRegion(d))
+	NetworkingV1Client, err := config.NetworkingV1Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating networking client: %s", err)
-	}
-
-	bwClient, err := cfg.NetworkingV1Client(region)
-	if err != nil {
-		return diag.Errorf("error creating bandwidth v1 client: %s", err)
+		return fmtp.DiagErrorf("Error creating networking client: %s", err)
 	}
 
 	size := d.Get("size").(int)
@@ -132,24 +126,22 @@ func resourceVpcBandWidthV2Create(ctx context.Context, d *schema.ResourceData, m
 		Size:       &size,
 	}
 
-	epsID := cfg.GetEnterpriseProjectID(d)
+	epsID := config.GetEnterpriseProjectID(d)
 	if epsID != "" {
 		createOpts.EnterpriseProjectId = epsID
 	}
 
-	log.Printf("[DEBUG] bandwidth create options: %#v", createOpts)
+	logp.Printf("[DEBUG] Create Options: %#v", createOpts)
 	b, err := bandwidths.Create(networkingClient, createOpts).Extract()
 	if err != nil {
-		return diag.Errorf("error creating bandwidth: %s", err)
+		return fmtp.DiagErrorf("Error creating Bandwidth: %s", err)
 	}
 
-	d.SetId(b.ID)
-
-	log.Printf("[DEBUG] Waiting for bandwidth (%s) to become available.", b.ID)
+	logp.Printf("[DEBUG] Waiting for Bandwidth (%s) to become available.", b.ID)
 	stateConf := &resource.StateChangeConf{
 		Target:     []string{"NORMAL"},
 		Pending:    []string{"CREATING"},
-		Refresh:    waitForBandwidth(bwClient, b.ID),
+		Refresh:    waitForBandwidth(NetworkingV1Client, b.ID),
 		Timeout:    d.Timeout(schema.TimeoutCreate),
 		Delay:      3 * time.Second,
 		MinTimeout: 3 * time.Second,
@@ -157,56 +149,22 @@ func resourceVpcBandWidthV2Create(ctx context.Context, d *schema.ResourceData, m
 
 	_, err = stateConf.WaitForStateContext(ctx)
 	if err != nil {
-		return diag.Errorf("error waiting for bandwidth (%s) to become ACTIVE: %s",
+		return fmtp.DiagErrorf(
+			"Error waiting for Bandwidth (%s) to become ACTIVE for creation: %s",
 			b.ID, err)
 	}
-
-	if d.Get("charging_mode").(string) == "prePaid" {
-		// we can not create a bandwidth with pre-paid directly due to the API does not support
-		// call the change-to-period API as a workaround
-		bssClient, err := cfg.BssV2Client(region)
-		if err != nil {
-			return diag.Errorf("error creating BSS v2 client: %s", err)
-		}
-
-		changeOpts := bandwidths.ChangeToPeriodOpts{
-			BandwidthIDs: []string{b.ID},
-			ExtendParam: structs.ChargeInfo{
-				ChargeMode:  d.Get("charging_mode").(string),
-				PeriodType:  d.Get("period_unit").(string),
-				PeriodNum:   d.Get("period").(int),
-				IsAutoRenew: d.Get("auto_renew").(string),
-				IsAutoPay:   "true",
-			},
-		}
-		orderID, err := bandwidths.ChangeToPeriod(networkingClient, changeOpts).Extract()
-		if err != nil {
-			return diag.Errorf("error changing bandwidth (%s) to pre-paid billing mode: %s",
-				b.ID, err)
-		}
-
-		if err := common.WaitOrderComplete(ctx, bssClient, orderID, d.Timeout(schema.TimeoutCreate)); err != nil {
-			return diag.FromErr(err)
-		}
-	}
+	d.SetId(b.ID)
 
 	return resourceVpcBandWidthV2Read(ctx, d, meta)
 }
 
 func resourceVpcBandWidthV2Update(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-	networkingClient, err := cfg.NetworkingV2Client(region)
+	config := meta.(*config.Config)
+	networkingClient, err := config.NetworkingV2Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating networking client: %s", err)
+		return fmtp.DiagErrorf("Error creating networking client: %s", err)
 	}
 
-	bssClient, err := cfg.BssV2Client(region)
-	if err != nil {
-		return diag.Errorf("error creating BSS V2 client: %s", err)
-	}
-
-	bwID := d.Id()
 	if d.HasChanges("name", "size") {
 		updateOpts := bandwidths.UpdateOpts{
 			Bandwidth: bandwidths.Bandwidth{
@@ -214,30 +172,9 @@ func resourceVpcBandWidthV2Update(ctx context.Context, d *schema.ResourceData, m
 				Size: d.Get("size").(int),
 			},
 		}
-
-		// ExtendParam is valid and mandatory when changing size field in pre-paid billing mode
-		if d.HasChange("size") && d.Get("charging_mode").(string) == "prePaid" {
-			updateOpts.ExtendParam = &bandwidths.ExtendParam{
-				IsAutoPay: "true",
-			}
-		}
-
-		log.Printf("[DEBUG] bandwidth update options: %#v", updateOpts)
-		resp, err := bandwidths.Update(networkingClient, bwID, updateOpts).Extract()
+		_, err := bandwidths.Update(networkingClient, d.Id(), updateOpts)
 		if err != nil {
-			return diag.Errorf("error updating bandwidth (%s): %s", bwID, err)
-		}
-
-		if resp.OrderID != "" {
-			if err := common.WaitOrderComplete(ctx, bssClient, resp.OrderID, d.Timeout(schema.TimeoutUpdate)); err != nil {
-				return diag.FromErr(err)
-			}
-		}
-	}
-
-	if d.HasChange("auto_renew") {
-		if err = common.UpdateAutoRenew(bssClient, d.Get("auto_renew").(string), bwID); err != nil {
-			return diag.Errorf("error updating the auto-renew of the bandwidth (%s): %s", bwID, err)
+			return fmtp.DiagErrorf("Error updating HuaweiCloud BandWidth (%s): %s", d.Id(), err)
 		}
 	}
 
@@ -245,14 +182,13 @@ func resourceVpcBandWidthV2Update(ctx context.Context, d *schema.ResourceData, m
 }
 
 func resourceVpcBandWidthV2Read(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-	bwClient, err := cfg.NetworkingV1Client(region)
+	config := meta.(*config.Config)
+	networkingClient, err := config.NetworkingV1Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating bandwidth v1 client: %s", err)
+		return fmtp.DiagErrorf("Error creating networking client: %s", err)
 	}
 
-	b, err := bandwidthsv1.Get(bwClient, d.Id()).Extract()
+	b, err := bandwidthsv1.Get(networkingClient, d.Id()).Extract()
 	if err != nil {
 		return common.CheckDeletedDiag(d, err, "bandwidth")
 	}
@@ -262,65 +198,53 @@ func resourceVpcBandWidthV2Read(_ context.Context, d *schema.ResourceData, meta 
 		d.Set("size", b.Size),
 		d.Set("charge_mode", b.ChargeMode),
 		d.Set("enterprise_project_id", b.EnterpriseProjectID),
+
 		d.Set("share_type", b.ShareType),
 		d.Set("bandwidth_type", b.BandwidthType),
 		d.Set("status", b.Status),
-		d.Set("charging_mode", normalizeChargingMode(b.BillingInfo)),
 		d.Set("publicips", flattenPublicIPs(b)),
 	)
 	if err := mErr.ErrorOrNil(); err != nil {
-		return diag.Errorf("error setting bandwidth fields: %s", err)
+		return fmtp.DiagErrorf("Error setting bandwidth fields: %s", err)
 	}
 
 	return nil
 }
 
 func resourceVpcBandWidthV2Delete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-
-	networkingClient, err := cfg.NetworkingV2Client(region)
+	config := meta.(*config.Config)
+	networkingClient, err := config.NetworkingV2Client(config.GetRegion(d))
+	NetworkingV1Client, err := config.NetworkingV1Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating networking client: %s", err)
+		return fmtp.DiagErrorf("Error creating networking client: %s", err)
 	}
 
-	bwClient, err := cfg.NetworkingV1Client(region)
+	err = bandwidths.Delete(networkingClient, d.Id()).ExtractErr()
 	if err != nil {
-		return diag.Errorf("error creating bandwidth v1 client: %s", err)
-	}
-
-	bwID := d.Id()
-	if v, ok := d.GetOk("charging_mode"); ok && v.(string) == "prePaid" {
-		if err := common.UnsubscribePrePaidResource(d, cfg, []string{bwID}); err != nil {
-			return diag.Errorf("error unsubscribe bandwidth: %s", err)
-		}
-	} else {
-		if err := bandwidths.Delete(networkingClient, bwID).ExtractErr(); err != nil {
-			return diag.Errorf("error deleting bandwidth: %s", err)
-		}
+		return fmtp.DiagErrorf("Error deleting HuaweiCloud Bandwidth: %s", err)
 	}
 
 	stateConf := &resource.StateChangeConf{
 		Pending:    []string{"NORMAL"},
 		Target:     []string{"DELETED"},
-		Refresh:    waitForBandwidth(bwClient, bwID),
+		Refresh:    waitForBandwidth(NetworkingV1Client, d.Id()),
 		Timeout:    d.Timeout(schema.TimeoutDelete),
-		Delay:      5 * time.Second,
-		MinTimeout: 5 * time.Second,
+		Delay:      3 * time.Second,
+		MinTimeout: 3 * time.Second,
 	}
 
 	_, err = stateConf.WaitForStateContext(ctx)
 	if err != nil {
-		return diag.Errorf("error waiting for bandwidth (%s) to become DELETED: %s",
-			bwID, err)
+		return fmtp.DiagErrorf("Error deleting Bandwidth: %s", err)
 	}
 
+	d.SetId("")
 	return nil
 }
 
-func waitForBandwidth(client *golangsdk.ServiceClient, id string) resource.StateRefreshFunc {
+func waitForBandwidth(networkingClient *golangsdk.ServiceClient, Id string) resource.StateRefreshFunc {
 	return func() (interface{}, string, error) {
-		b, err := bandwidthsv1.Get(client, id).Extract()
+		b, err := bandwidthsv1.Get(networkingClient, Id).Extract()
 		if err != nil {
 			if _, ok := err.(golangsdk.ErrDefault404); ok {
 				return b, "DELETED", nil
@@ -328,16 +252,9 @@ func waitForBandwidth(client *golangsdk.ServiceClient, id string) resource.State
 			return nil, "", err
 		}
 
-		log.Printf("[DEBUG] the current status of bandwidth (%s) is %s", b.ID, b.Status)
+		logp.Printf("[DEBUG] HuaweiCloud Bandwidth (%s) current status: %s", b.ID, b.Status)
 		return b, b.Status, nil
 	}
-}
-
-func normalizeChargingMode(billing string) string {
-	if billing != "" {
-		return "prePaid"
-	}
-	return "postPaid"
 }
 
 func flattenPublicIPs(band bandwidthsv1.BandWidth) []map[string]interface{} {
@@ -354,6 +271,7 @@ func flattenPublicIPs(band bandwidthsv1.BandWidth) []map[string]interface{} {
 			"ip_version": ipInfo.IPVersion,
 			"ip_address": address,
 		}
+
 	}
 
 	return allIPs

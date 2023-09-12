@@ -75,14 +75,6 @@ func ResourceTopic() *schema.Resource {
 				Optional: true,
 			},
 			"tags": common.TagsSchema(),
-			"access_policy": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "schema: Internal",
-				ConflictsWith: []string{
-					"users_publish_allowed", "services_publish_allowed",
-				},
-			},
 
 			"topic_urn": {
 				Type:     schema.TypeString,
@@ -207,13 +199,10 @@ func resourceTopicRead(_ context.Context, d *schema.ResourceData, meta interface
 		servicesPublishAllowed = strings.Join(utils.ExpandToStringList(services.([]interface{})), ",")
 	}
 
-	// users_publish_allowed and services_publish_allowed will not be set if access_policy is specified
-	if _, ok := d.GetOk("access_policy"); !ok {
-		mErr = multierror.Append(mErr,
-			d.Set("users_publish_allowed", usersPublishAllowed),
-			d.Set("services_publish_allowed", servicesPublishAllowed),
-		)
-	}
+	mErr = multierror.Append(mErr,
+		d.Set("users_publish_allowed", usersPublishAllowed),
+		d.Set("services_publish_allowed", servicesPublishAllowed),
+	)
 
 	// fetch introduction
 	introduction, err := topics.GetPolicies(client, topicUrn, "introduction").Extract()
@@ -263,7 +252,7 @@ func resourceTopicUpdate(ctx context.Context, d *schema.ResourceData, meta inter
 		}
 	}
 
-	if d.HasChanges("access_policy", "users_publish_allowed", "services_publish_allowed", "introduction") {
+	if d.HasChanges("users_publish_allowed", "services_publish_allowed", "introduction") {
 		err := updatePolicies(client, d, id)
 		if err != nil {
 			diag.Errorf("error updating the policies of topic: %s", err)
@@ -289,12 +278,11 @@ func resourceTopicUpdate(ctx context.Context, d *schema.ResourceData, meta inter
 }
 
 func updatePolicies(client *golangsdk.ServiceClient, d *schema.ResourceData, id string) error {
-	if d.HasChanges("users_publish_allowed", "services_publish_allowed", "access_policy") {
+	if d.HasChanges("users_publish_allowed", "services_publish_allowed") {
 		value, err := buildUpdateAccessPolicy(d)
 		if err != nil {
 			return err
 		}
-
 		opts := topics.UpdatePoliciesOpts{
 			Value: value,
 		}
@@ -318,10 +306,6 @@ func updatePolicies(client *golangsdk.ServiceClient, d *schema.ResourceData, id 
 }
 
 func buildUpdateAccessPolicy(d *schema.ResourceData) (string, error) {
-	if v, ok := d.GetOk("access_policy"); ok {
-		return v.(string), nil
-	}
-
 	statement := []map[string]interface{}{}
 	if v, ok := d.GetOk("users_publish_allowed"); ok {
 		var csp interface{}

@@ -2,25 +2,24 @@ package iam
 
 import (
 	"context"
-	"log"
-
-	"github.com/hashicorp/go-multierror"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
 	"github.com/chnsz/golangsdk"
 	"github.com/chnsz/golangsdk/openstack/identity/v3/projects"
-
+	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/common"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/fmtp"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/logp"
 )
 
-func ResourceIdentityProject() *schema.Resource {
+func ResourceIdentityProjectV3() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceIdentityProjectCreate,
-		ReadContext:   resourceIdentityProjectRead,
-		UpdateContext: resourceIdentityProjectUpdate,
-		DeleteContext: resourceIdentityProjectDelete,
+		CreateContext: resourceIdentityProjectV3Create,
+		ReadContext:   resourceIdentityProjectV3Read,
+		UpdateContext: resourceIdentityProjectV3Update,
+		DeleteContext: resourceIdentityProjectV3Delete,
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -46,11 +45,11 @@ func ResourceIdentityProject() *schema.Resource {
 	}
 }
 
-func resourceIdentityProjectCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	identityClient, err := cfg.IdentityV3Client(cfg.GetRegion(d))
+func resourceIdentityProjectV3Create(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	config := meta.(*config.Config)
+	identityClient, err := config.IdentityV3Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client: %s", err)
+		return fmtp.DiagErrorf("Error creating Huaweicloud identity client: %s", err)
 	}
 
 	createOpts := projects.CreateOpts{
@@ -58,21 +57,22 @@ func resourceIdentityProjectCreate(ctx context.Context, d *schema.ResourceData, 
 		Description: d.Get("description").(string),
 	}
 
-	log.Printf("[DEBUG] Create Options: %#v", createOpts)
+	logp.Printf("[DEBUG] Create Options: %#v", createOpts)
 	project, err := projects.Create(identityClient, createOpts).Extract()
 	if err != nil {
-		return diag.Errorf("error creating IAM project: %s", err)
+		return fmtp.DiagErrorf("Error creating Huaweicloud project: %s", err)
 	}
 
 	d.SetId(project.ID)
-	return resourceIdentityProjectRead(ctx, d, meta)
+
+	return resourceIdentityProjectV3Read(ctx, d, meta)
 }
 
-func resourceIdentityProjectRead(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	identityClient, err := cfg.IdentityV3Client(cfg.GetRegion(d))
+func resourceIdentityProjectV3Read(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	config := meta.(*config.Config)
+	identityClient, err := config.IdentityV3Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client: %s", err)
+		return fmtp.DiagErrorf("Error creating Huaweicloud identity client: %s", err)
 	}
 
 	project, err := projects.Get(identityClient, d.Id()).Extract()
@@ -80,7 +80,7 @@ func resourceIdentityProjectRead(_ context.Context, d *schema.ResourceData, meta
 		return common.CheckDeletedDiag(d, err, "IAM project")
 	}
 
-	log.Printf("[DEBUG] Retrieved IAM project: %#v", project)
+	logp.Printf("[DEBUG] Retrieved Huaweicloud project: %#v", project)
 
 	mErr := multierror.Append(nil,
 		d.Set("name", project.Name),
@@ -89,17 +89,17 @@ func resourceIdentityProjectRead(_ context.Context, d *schema.ResourceData, meta
 		d.Set("enabled", project.Enabled),
 	)
 	if err = mErr.ErrorOrNil(); err != nil {
-		return diag.Errorf("error setting IAM project fields: %s", err)
+		return fmtp.DiagErrorf("error setting identity project fields: %s", err)
 	}
 
 	return nil
 }
 
-func resourceIdentityProjectUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	identityClient, err := cfg.IdentityV3Client(cfg.GetRegion(d))
+func resourceIdentityProjectV3Update(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	config := meta.(*config.Config)
+	identityClient, err := config.IdentityV3Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client: %s", err)
+		return fmtp.DiagErrorf("Error creating Huaweicloud identity client: %s", err)
 	}
 
 	var hasChange bool
@@ -119,18 +119,18 @@ func resourceIdentityProjectUpdate(ctx context.Context, d *schema.ResourceData, 
 	if hasChange {
 		_, err := projects.Update(identityClient, d.Id(), updateOpts).Extract()
 		if err != nil {
-			return diag.Errorf("error updating IAM project: %s", err)
+			return fmtp.DiagErrorf("Error updating Huaweicloud project: %s", err)
 		}
 	}
 
-	return resourceIdentityProjectRead(ctx, d, meta)
+	return resourceIdentityProjectV3Read(ctx, d, meta)
 }
 
-func resourceIdentityProjectDelete(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	identityClient, err := cfg.IdentityV3Client(cfg.GetRegion(d))
+func resourceIdentityProjectV3Delete(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	config := meta.(*config.Config)
+	identityClient, err := config.IdentityV3Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating IAM client: %s", err)
+		return fmtp.DiagErrorf("Error creating Huaweicloud identity client: %s", err)
 	}
 
 	err = projects.Delete(identityClient, d.Id()).ExtractErr()
@@ -145,7 +145,7 @@ func resourceIdentityProjectDelete(_ context.Context, d *schema.ResourceData, me
 			}
 		}
 
-		return diag.Errorf("error deleting IAM project: %s", err)
+		return fmtp.DiagErrorf("Error deleting IAM project: %s", err)
 	}
 
 	return nil

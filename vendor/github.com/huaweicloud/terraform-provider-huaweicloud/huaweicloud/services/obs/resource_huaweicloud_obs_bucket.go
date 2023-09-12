@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
 	"github.com/chnsz/golangsdk"
-	"github.com/chnsz/golangsdk/openstack/eps/v1/enterpriseprojects"
 	"github.com/chnsz/golangsdk/openstack/obs"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/common"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
@@ -444,10 +443,11 @@ func resourceObsBucketUpdate(ctx context.Context, d *schema.ResourceData, meta i
 		if err != nil {
 			return diag.Errorf("error creating EPS client: %s", err)
 		}
+		if epsClient.ProjectID == "" {
+			epsClient.ProjectID = conf.GetProjectID(region)
+		}
 
-		// API Limitations: still requires `project_id` field when migrating the EPS of OBS bucket
-		projectID := conf.GetProjectID(region)
-		if err := resourceObsBucketEnterpriseProjectIdUpdate(ctx, d, obsClient, epsClient, region, projectID); err != nil {
+		if err := resourceObsBucketEnterpriseProjectIdUpdate(ctx, d, obsClient, epsClient, region); err != nil {
 			return diag.FromErr(err)
 		}
 	}
@@ -577,13 +577,7 @@ func resourceObsBucketDelete(ctx context.Context, d *schema.ResourceData, meta i
 	_, err = obsClient.DeleteBucket(bucket)
 	if err != nil {
 		obsError, ok := err.(obs.ObsError)
-		if !ok {
-			return diag.Errorf("Error deleting OBS bucket %s, %s", bucket, err)
-		}
-		if obsError.StatusCode == 404 {
-			return common.CheckDeletedDiag(d, golangsdk.ErrDefault404{}, "OBS bucket")
-		}
-		if obsError.Code == "BucketNotEmpty" {
+		if ok && obsError.Code == "BucketNotEmpty" {
 			log.Printf("[WARN] OBS bucket: %s is not empty", bucket)
 			if d.Get("force_destroy").(bool) {
 				err = deleteAllBucketObjects(obsClient, bucket)
@@ -594,6 +588,7 @@ func resourceObsBucketDelete(ctx context.Context, d *schema.ResourceData, meta i
 			}
 			return diag.FromErr(err)
 		}
+		return diag.Errorf("Error deleting OBS bucket %s, %s", bucket, err)
 	}
 	return nil
 }
@@ -949,18 +944,11 @@ func resourceObsBucketCorsUpdate(obsClient *obs.ObsClient, d *schema.ResourceDat
 }
 
 func resourceObsBucketEnterpriseProjectIdUpdate(ctx context.Context, d *schema.ResourceData,
-	obsClient *obs.ObsClient, epsClient *golangsdk.ServiceClient, region, projectID string) error {
+	obsClient *obs.ObsClient, epsClient *golangsdk.ServiceClient, region string) error {
 	bucket := d.Get("bucket").(string)
 	targetEPSId := d.Get("enterprise_project_id").(string)
 
-	migrateOpts := enterpriseprojects.MigrateResourceOpts{
-		RegionId:     region,
-		ProjectId:    projectID,
-		ResourceType: "bucket",
-		ResourceId:   bucket,
-	}
-
-	if err := common.MigrateEnterpriseProject(epsClient, targetEPSId, migrateOpts); err != nil {
+	if err := common.MigrateEnterpriseProject(epsClient, region, targetEPSId, "bucket", bucket); err != nil {
 		return err
 	}
 

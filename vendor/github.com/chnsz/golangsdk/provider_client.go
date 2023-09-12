@@ -10,8 +10,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-
-	"github.com/chnsz/golangsdk/auth"
 )
 
 // DefaultUserAgent is the default User-Agent string set in the request header.
@@ -312,9 +310,15 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 	prereqtok := req.Header.Get("X-Auth-Token")
 
 	if client.AKSKAuthOptions.AccessKey != "" {
-		if err := auth.Sign(req, client.AKSKAuthOptions.AccessKey, client.AKSKAuthOptions.SecretKey); err != nil {
-			return nil, err
+		signOpts := SignOptions{
+			AccessKey: client.AKSKAuthOptions.AccessKey,
+			SecretKey: client.AKSKAuthOptions.SecretKey,
 		}
+		// get region from request headers
+		if region, ok := options.MoreHeaders["region"]; ok {
+			signOpts.RegionName = region
+		}
+		Sign(req, signOpts)
 		if client.AKSKAuthOptions.ProjectId != "" {
 			req.Header.Set("X-Project-Id", client.AKSKAuthOptions.ProjectId)
 		}
@@ -351,12 +355,11 @@ func (client *ProviderClient) doRequest(method, url string, options *RequestOpts
 		body, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 		respErr := ErrUnexpectedResponseCode{
-			URL:       url,
-			Method:    method,
-			Expected:  okc,
-			Actual:    resp.StatusCode,
-			RequestId: resp.Header.Get("X-Request-Id"),
-			Body:      body,
+			URL:      url,
+			Method:   method,
+			Expected: okc,
+			Actual:   resp.StatusCode,
+			Body:     body,
 		}
 
 		errType := options.ErrorContext

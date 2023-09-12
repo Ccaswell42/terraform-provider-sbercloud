@@ -2,16 +2,17 @@ package eip
 
 import (
 	"context"
-	"log"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
 	"github.com/chnsz/golangsdk/openstack/networking/v1/bandwidths"
-
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/fmtp"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/logp"
 )
 
 func DataSourceBandWidth() *schema.Resource {
@@ -29,9 +30,10 @@ func DataSourceBandWidth() *schema.Resource {
 				Required: true,
 			},
 			"size": {
-				Type:     schema.TypeInt,
-				Optional: true,
-				Computed: true,
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Computed:     true,
+				ValidateFunc: validation.IntBetween(5, 2000),
 			},
 			"enterprise_project_id": {
 				Type:     schema.TypeString,
@@ -60,24 +62,23 @@ func DataSourceBandWidth() *schema.Resource {
 }
 
 func dataSourceBandWidthRead(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-	bwClient, err := cfg.NetworkingV1Client(region)
+	config := meta.(*config.Config)
+	vpcClient, err := config.NetworkingV1Client(config.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating bandwidth v1 client: %s", err)
+		return fmtp.DiagErrorf("Error creating HuaweiCloud VPC client: %s", err)
 	}
 
 	listOpts := bandwidths.ListOpts{
 		ShareType:           "WHOLE",
-		EnterpriseProjectID: cfg.DataGetEnterpriseProjectID(d),
+		EnterpriseProjectID: config.DataGetEnterpriseProjectID(d),
 	}
 
-	allBWs, err := bandwidths.List(bwClient, listOpts).Extract()
+	allBWs, err := bandwidths.List(vpcClient, listOpts).Extract()
 	if err != nil {
-		return diag.Errorf("unable to list bandwidths: %s", err)
+		return fmtp.DiagErrorf("Unable to list HuaweiCloud bandwidths: %s", err)
 	}
 	if len(allBWs) == 0 {
-		return diag.Errorf("bandwidth was not found")
+		return fmtp.DiagErrorf("No HuaweiCloud bandwidth was found")
 	}
 
 	filter := map[string]interface{}{
@@ -89,16 +90,16 @@ func dataSourceBandWidthRead(_ context.Context, d *schema.ResourceData, meta int
 
 	filterBWs, err := utils.FilterSliceWithField(allBWs, filter)
 	if err != nil {
-		return diag.Errorf("filter bandwidths failed: %s", err)
+		return fmtp.DiagErrorf("filter bandwidths failed: %s", err)
 	}
 	if len(filterBWs) == 0 {
-		return diag.Errorf("bandwidth was not found by %+v", filter)
+		return fmtp.DiagErrorf("No HuaweiCloud bandwidth was found by %+v", filter)
 	}
 
 	result := filterBWs[0].(bandwidths.BandWidth)
-	log.Printf("[DEBUG] Retrieved bandwidth %s: %+v", result.ID, result)
-
+	logp.Printf("[DEBUG] Retrieved HuaweiCloud bandwidth %s: %+v", result.ID, result)
 	d.SetId(result.ID)
+
 	mErr := multierror.Append(
 		d.Set("name", result.Name),
 		d.Set("size", result.Size),
@@ -111,7 +112,7 @@ func dataSourceBandWidthRead(_ context.Context, d *schema.ResourceData, meta int
 		d.Set("publicips", flattenPublicIPs(result)),
 	)
 	if err := mErr.ErrorOrNil(); err != nil {
-		return diag.Errorf("error setting bandwidth fields: %s", err)
+		return fmtp.DiagErrorf("Error setting bandwidth fields: %s", err)
 	}
 
 	return nil

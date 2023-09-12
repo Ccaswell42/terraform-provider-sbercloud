@@ -66,8 +66,6 @@ type Turbo struct {
 	CreatedAt time.Time `json:"-"`
 	// The enterprise project ID
 	EnterpriseProjectId string `json:"enterprise_project_id"`
-	// The bandwidth of the HPC file system.
-	HpcBw string `json:"hpc_bw"`
 }
 
 type TurboExpandResponse struct {

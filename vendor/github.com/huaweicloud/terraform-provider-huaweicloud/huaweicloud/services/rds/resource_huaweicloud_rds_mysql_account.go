@@ -1,44 +1,35 @@
-// ---------------------------------------------------------------
-// *** AUTO GENERATED CODE ***
-// @Product RDS
-// ---------------------------------------------------------------
-
 package rds
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
 	"strings"
 	"time"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
-	"github.com/chnsz/golangsdk"
-	"github.com/chnsz/golangsdk/pagination"
-
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/rds/v3/model"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/common"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils"
+	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils/fmtp"
 )
 
-func ResourceMysqlAccount() *schema.Resource {
+func ResourceRdsAccount() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceMysqlAccountCreate,
-		UpdateContext: resourceMysqlAccountUpdate,
-		ReadContext:   resourceMysqlAccountRead,
-		DeleteContext: resourceMysqlAccountDelete,
+		CreateContext: resourceRdsAccountCreate,
+		UpdateContext: resourceRdsAccountUpdate,
+		DeleteContext: resourceRdsAccountDelete,
+		ReadContext:   resourceRdsAccountRead,
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
 
 		Timeouts: &schema.ResourceTimeout{
-			Create: schema.DefaultTimeout(30 * time.Minute),
-			Update: schema.DefaultTimeout(30 * time.Minute),
-			Delete: schema.DefaultTimeout(30 * time.Minute),
+			Create: schema.DefaultTimeout(10 * time.Minute),
+			Update: schema.DefaultTimeout(10 * time.Minute),
+			Delete: schema.DefaultTimeout(10 * time.Minute),
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -49,313 +40,182 @@ func ResourceMysqlAccount() *schema.Resource {
 				Computed: true,
 			},
 			"instance_id": {
-				Type:        schema.TypeString,
-				Required:    true,
-				ForceNew:    true,
-				Description: `Specifies the ID of the RDS Mysql instance.`,
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: true,
 			},
 			"name": {
-				Type:        schema.TypeString,
-				Required:    true,
-				ForceNew:    true,
-				Description: `Specifies the username of the DB account.`,
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: true,
 			},
 			"password": {
-				Type:        schema.TypeString,
-				Required:    true,
-				Sensitive:   true,
-				Description: `Specifies the password of the DB account.`,
-			},
-			"hosts": {
-				Type:        schema.TypeList,
-				Elem:        &schema.Schema{Type: schema.TypeString},
-				Optional:    true,
-				Computed:    true,
-				ForceNew:    true,
-				Description: `Specifies the IP addresses that are allowed to access your DB instance.`,
-			},
-			"description": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: `Specifies remarks of the DB account.`,
+				Type:      schema.TypeString,
+				Required:  true,
+				Sensitive: true,
 			},
 		},
 	}
 }
 
-func resourceMysqlAccountCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-
-	// createMysqlAccount: create RDS Mysql account.
-	var (
-		createMysqlAccountHttpUrl = "v3/{project_id}/instances/{instance_id}/db_user"
-		createMysqlAccountProduct = "rds"
-	)
-	createMysqlAccountClient, err := cfg.NewServiceClient(createMysqlAccountProduct, region)
+func resourceRdsAccountCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	c := meta.(*config.Config)
+	client, err := c.HcRdsV3Client(c.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating RDS client: %s", err)
+		return fmtp.DiagErrorf("error creating RDS client: %s", err)
 	}
 
+	dbUser := d.Get("name").(string)
 	instanceId := d.Get("instance_id").(string)
-	createMysqlAccountPath := createMysqlAccountClient.Endpoint + createMysqlAccountHttpUrl
-	createMysqlAccountPath = strings.ReplaceAll(createMysqlAccountPath, "{project_id}",
-		createMysqlAccountClient.ProjectID)
-	createMysqlAccountPath = strings.ReplaceAll(createMysqlAccountPath, "{instance_id}", instanceId)
 
-	createMysqlAccountOpt := golangsdk.RequestOpts{
-		KeepResponseBody: true,
-	}
-	requestBody := buildCreateMysqlAccountBodyParams(d)
-	log.Printf("[DEBUG] Create RDS Mysql account options: %#v", createMysqlAccountOpt)
-	requestBody["password"] = utils.ValueIngoreEmpty(d.Get("password"))
-	createMysqlAccountOpt.JSONBody = utils.RemoveNil(requestBody)
+	config.MutexKV.Lock(instanceId)
+	defer config.MutexKV.Unlock(instanceId)
 
-	retryFunc := func() (interface{}, bool, error) {
-		_, err = createMysqlAccountClient.Request("POST", createMysqlAccountPath, &createMysqlAccountOpt)
-		retry, err := handleMultiOperationsError(err)
-		return nil, retry, err
+	createOpts := &model.CreateDbUserRequest{
+		InstanceId: instanceId,
+		Body: &model.UserForCreation{
+			Name:     dbUser,
+			Password: d.Get("password").(string),
+		},
 	}
-	_, err = common.RetryContextWithWaitForState(&common.RetryContextWithWaitForStateParam{
-		Ctx:          ctx,
-		RetryFunc:    retryFunc,
-		WaitFunc:     rdsInstanceStateRefreshFunc(createMysqlAccountClient, instanceId),
-		WaitTarget:   []string{"ACTIVE"},
-		Timeout:      d.Timeout(schema.TimeoutCreate),
-		DelayTimeout: 1 * time.Second,
-		PollInterval: 10 * time.Second,
+
+	err = resource.RetryContext(ctx, d.Timeout(schema.TimeoutCreate), func() *resource.RetryError {
+		_, err = client.CreateDbUser(createOpts)
+		retryable, err := handleMultiOperationsError(err)
+		if retryable {
+			return resource.RetryableError(err)
+		}
+		if err != nil {
+			return resource.NonRetryableError(err)
+		}
+		return nil
 	})
 	if err != nil {
-		return diag.Errorf("error creating RDS Mysql account: %s", err)
+		return diag.Errorf("error creating RDS database user: %s", err)
 	}
 
-	accountName := d.Get("name").(string)
-	d.SetId(instanceId + "/" + accountName)
-
-	return resourceMysqlAccountRead(ctx, d, meta)
+	id := instanceId + "/" + dbUser
+	d.SetId(id)
+	return resourceRdsAccountRead(ctx, d, meta)
 }
 
-func buildCreateMysqlAccountBodyParams(d *schema.ResourceData) map[string]interface{} {
-	bodyParams := map[string]interface{}{
-		"name":    utils.ValueIngoreEmpty(d.Get("name")),
-		"comment": utils.ValueIngoreEmpty(d.Get("description")),
-		"hosts":   utils.ValueIngoreEmpty(d.Get("hosts")),
-	}
-	return bodyParams
-}
-
-func resourceMysqlAccountRead(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-
-	var mErr *multierror.Error
-
-	// getMysqlAccount: query RDS Mysql account
-	var (
-		getMysqlAccountHttpUrl = "v3/{project_id}/instances/{instance_id}/db_user/detail?page=1&limit=100"
-		getMysqlAccountProduct = "rds"
-	)
-	getMysqlAccountClient, err := cfg.NewServiceClient(getMysqlAccountProduct, region)
+func resourceRdsAccountRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	c := meta.(*config.Config)
+	client, err := c.HcRdsV3Client(c.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating RDS client: %s", err)
+		return fmtp.DiagErrorf("error creating RDS client: %s", err)
 	}
 
 	// Split instance_id and user from resource id
-	parts := strings.Split(d.Id(), "/")
+	parts := strings.SplitN(d.Id(), "/", 2)
 	if len(parts) != 2 {
-		return diag.Errorf("invalid id format, must be <instance_id>/<name>")
+		return fmtp.DiagErrorf("invalid id format, must be <instance_id>/<user>")
 	}
 	instanceId := parts[0]
-	accountName := parts[1]
+	dbUser := parts[1]
 
-	getMysqlAccountPath := getMysqlAccountClient.Endpoint + getMysqlAccountHttpUrl
-	getMysqlAccountPath = strings.ReplaceAll(getMysqlAccountPath, "{project_id}", getMysqlAccountClient.ProjectID)
-	getMysqlAccountPath = strings.ReplaceAll(getMysqlAccountPath, "{instance_id}", instanceId)
-
-	getMysqlAccountResp, err := pagination.ListAllItems(
-		getMysqlAccountClient,
-		"page",
-		getMysqlAccountPath,
-		&pagination.QueryOpts{MarkerField: ""})
-
-	if err != nil {
-		return common.CheckDeletedDiag(d, err, "error retrieving RDS Mysql account")
+	// items on every page, [1, 100]
+	limit := int32(100)
+	// List all db users
+	request := &model.ListDbUsersRequest{
+		InstanceId: instanceId,
+		Limit:      limit,
+		Page:       int32(1),
 	}
 
-	getMysqlAccountRespJson, err := json.Marshal(getMysqlAccountResp)
-	if err != nil {
-		return diag.FromErr(err)
-	}
-	var getMysqlAccountRespBody interface{}
-	err = json.Unmarshal(getMysqlAccountRespJson, &getMysqlAccountRespBody)
-	if err != nil {
-		return diag.FromErr(err)
+	for {
+		response, err := client.ListDbUsers(request)
+		if err != nil {
+			return common.CheckDeletedDiag(d, err, "error listing RDS db users")
+		}
+		users := *response.Users
+		if len(users) == 0 {
+			break
+		}
+		request.Page += 1
+		for _, user := range users {
+			if user.Name == dbUser {
+				d.Set("instance_id", instanceId)
+				d.Set("name", dbUser)
+				return nil
+			}
+		}
 	}
 
-	account := utils.PathSearch(fmt.Sprintf("users[?name=='%s']|[0]", accountName), getMysqlAccountRespBody, nil)
+	// DB user deleted
+	d.SetId("")
+	log.Printf("[WARN] failed to fetch RDS db user %s: deleted", dbUser)
 
-	if account == nil {
-		return common.CheckDeletedDiag(d, golangsdk.ErrDefault404{}, "")
-	}
-	mErr = multierror.Append(
-		mErr,
-		d.Set("region", region),
-		d.Set("instance_id", instanceId),
-		d.Set("name", utils.PathSearch("name", account, nil)),
-		d.Set("description", utils.PathSearch("comment", account, nil)),
-		d.Set("hosts", utils.PathSearch("hosts", account, nil)),
-	)
-
-	return diag.FromErr(mErr.ErrorOrNil())
+	return nil
 }
 
-func resourceMysqlAccountUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-
-	updateMysqlAccountClient, err := cfg.NewServiceClient("rds", region)
+func resourceRdsAccountUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	c := meta.(*config.Config)
+	client, err := c.HcRdsV3Client(c.GetRegion(d))
 	if err != nil {
-		return diag.Errorf("error creating RDS client: %s", err)
+		return fmtp.DiagErrorf("error creating RDS client: %s", err)
 	}
-
-	if err = updateMysqlAccountPassword(ctx, d, updateMysqlAccountClient); err != nil {
-		return diag.FromErr(err)
-	}
-
-	if err = updateMysqlAccountDescription(d, updateMysqlAccountClient); err != nil {
-		return diag.FromErr(err)
-	}
-	return resourceMysqlAccountRead(ctx, d, meta)
-}
-
-func updateMysqlAccountPassword(ctx context.Context, d *schema.ResourceData, client *golangsdk.ServiceClient) error {
-	if !d.HasChange("password") {
-		return nil
-	}
-	// updateMysqlAccount: update RDS Mysql account password
-	updateMysqlAccountHttpUrl := "v3/{project_id}/instances/{instance_id}/db_user/resetpwd"
-
-	updateMysqlAccountPath := client.Endpoint + updateMysqlAccountHttpUrl
-	updateMysqlAccountPath = strings.ReplaceAll(updateMysqlAccountPath, "{project_id}", client.ProjectID)
-	updateMysqlAccountPath = strings.ReplaceAll(updateMysqlAccountPath, "{instance_id}",
-		d.Get("instance_id").(string))
-
-	updateMysqlAccountOpt := golangsdk.RequestOpts{
-		KeepResponseBody: true,
-	}
-
-	updateMysqlAccountOpt.JSONBody = utils.RemoveNil(buildUpdateMysqlAccountPasswordBodyParams(d))
 
 	instanceId := d.Get("instance_id").(string)
-	retryFunc := func() (interface{}, bool, error) {
-		_, err := client.Request("POST", updateMysqlAccountPath, &updateMysqlAccountOpt)
-		retry, err := handleMultiOperationsError(err)
-		return nil, retry, err
-	}
-	_, err := common.RetryContextWithWaitForState(&common.RetryContextWithWaitForStateParam{
-		Ctx:          ctx,
-		RetryFunc:    retryFunc,
-		WaitFunc:     rdsInstanceStateRefreshFunc(client, instanceId),
-		WaitTarget:   []string{"ACTIVE"},
-		Timeout:      d.Timeout(schema.TimeoutUpdate),
-		DelayTimeout: 1 * time.Second,
-		PollInterval: 10 * time.Second,
-	})
-	if err != nil {
-		return fmt.Errorf("error updating Mysql account password: %s", err)
-	}
-	return nil
-}
+	config.MutexKV.Lock(instanceId)
+	defer config.MutexKV.Unlock(instanceId)
 
-func updateMysqlAccountDescription(d *schema.ResourceData, client *golangsdk.ServiceClient) error {
-	if !d.HasChange("description") {
-		return nil
-	}
-	// updateMysqlAccount: update RDS Mysql account password
-	updateMysqlAccountHttpUrl := "v3/{project_id}/instances/{instance_id}/db-users/{user_name}/comment"
-
-	updateMysqlAccountPath := client.Endpoint + updateMysqlAccountHttpUrl
-	updateMysqlAccountPath = strings.ReplaceAll(updateMysqlAccountPath, "{project_id}", client.ProjectID)
-	updateMysqlAccountPath = strings.ReplaceAll(updateMysqlAccountPath, "{instance_id}",
-		d.Get("instance_id").(string))
-	updateMysqlAccountPath = strings.ReplaceAll(updateMysqlAccountPath, "{user_name}", d.Get("name").(string))
-
-	updateMysqlAccountOpt := golangsdk.RequestOpts{
-		KeepResponseBody: true,
-	}
-
-	updateMysqlAccountOpt.JSONBody = utils.RemoveNil(buildUpdateMysqlAccountDescriptionBodyParams(d))
-
-	log.Printf("[DEBUG] Update RDS Mysql account description options: %#v", updateMysqlAccountOpt)
-	_, err := client.Request("PUT", updateMysqlAccountPath, &updateMysqlAccountOpt)
-	if err != nil {
-		return fmt.Errorf("error updating Mysql account description: %s", err)
-	}
-	return nil
-}
-
-func buildUpdateMysqlAccountPasswordBodyParams(d *schema.ResourceData) map[string]interface{} {
-	bodyParams := map[string]interface{}{
-		"name":     utils.ValueIngoreEmpty(d.Get("name")),
-		"password": utils.ValueIngoreEmpty(d.Get("password")),
-	}
-	return bodyParams
-}
-
-func buildUpdateMysqlAccountDescriptionBodyParams(d *schema.ResourceData) map[string]interface{} {
-	bodyParams := map[string]interface{}{
-		"comment": utils.ValueIngoreEmpty(d.Get("description")),
-	}
-	return bodyParams
-}
-
-func resourceMysqlAccountDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cfg := meta.(*config.Config)
-	region := cfg.GetRegion(d)
-
-	// deleteMysqlAccount: delete RDS Mysql account
-	var (
-		deleteMysqlAccountHttpUrl = "v3/{project_id}/instances/{instance_id}/db_user/{user_name}"
-		deleteMysqlAccountProduct = "rds"
-	)
-	deleteMysqlAccountClient, err := cfg.NewServiceClient(deleteMysqlAccountProduct, region)
-	if err != nil {
-		return diag.Errorf("error creating RDS client: %s", err)
-	}
-
-	deleteMysqlAccountPath := deleteMysqlAccountClient.Endpoint + deleteMysqlAccountHttpUrl
-	deleteMysqlAccountPath = strings.ReplaceAll(deleteMysqlAccountPath, "{project_id}",
-		deleteMysqlAccountClient.ProjectID)
-	deleteMysqlAccountPath = strings.ReplaceAll(deleteMysqlAccountPath, "{instance_id}",
-		d.Get("instance_id").(string))
-	deleteMysqlAccountPath = strings.ReplaceAll(deleteMysqlAccountPath, "{user_name}", d.Get("name").(string))
-
-	deleteMysqlAccountOpt := golangsdk.RequestOpts{
-		KeepResponseBody: true,
-		MoreHeaders: map[string]string{
-			"Content-Type": "application/json;charset=UTF-8",
+	updateOpts := &model.SetDbUserPwdRequest{
+		InstanceId: instanceId,
+		Body: &model.DbUserPwdRequest{
+			Name:     d.Get("name").(string),
+			Password: d.Get("password").(string),
 		},
 	}
 
-	log.Printf("[DEBUG] Delete RDS Mysql account options: %#v", deleteMysqlAccountOpt)
-
-	instanceId := d.Get("instance_id").(string)
-	retryFunc := func() (interface{}, bool, error) {
-		_, err = deleteMysqlAccountClient.Request("DELETE", deleteMysqlAccountPath, &deleteMysqlAccountOpt)
-		retry, err := handleMultiOperationsError(err)
-		return nil, retry, err
-	}
-	_, err = common.RetryContextWithWaitForState(&common.RetryContextWithWaitForStateParam{
-		Ctx:          ctx,
-		RetryFunc:    retryFunc,
-		WaitFunc:     rdsInstanceStateRefreshFunc(deleteMysqlAccountClient, instanceId),
-		WaitTarget:   []string{"ACTIVE"},
-		Timeout:      d.Timeout(schema.TimeoutDelete),
-		DelayTimeout: 1 * time.Second,
-		PollInterval: 10 * time.Second,
+	err = resource.RetryContext(ctx, d.Timeout(schema.TimeoutUpdate), func() *resource.RetryError {
+		_, err = client.SetDbUserPwd(updateOpts)
+		retryable, err := handleMultiOperationsError(err)
+		if retryable {
+			return resource.RetryableError(err)
+		}
+		if err != nil {
+			return resource.NonRetryableError(err)
+		}
+		return nil
 	})
 	if err != nil {
-		return diag.Errorf("error deleting RDS Mysql account: %s", err)
+		return diag.Errorf("error updating RDS database user: %s", err)
+	}
+
+	return resourceRdsAccountRead(ctx, d, meta)
+}
+
+func resourceRdsAccountDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	c := meta.(*config.Config)
+	client, err := c.HcRdsV3Client(c.GetRegion(d))
+	if err != nil {
+		return fmtp.DiagErrorf("error creating RDS client: %s", err)
+	}
+
+	instanceId := d.Get("instance_id").(string)
+	config.MutexKV.Lock(instanceId)
+	defer config.MutexKV.Unlock(instanceId)
+
+	deleteOpts := &model.DeleteDbUserRequest{
+		InstanceId: instanceId,
+		UserName:   d.Get("name").(string),
+	}
+
+	log.Printf("[DEBUG] Delete RDS db user options: %#v", deleteOpts)
+	err = resource.RetryContext(ctx, d.Timeout(schema.TimeoutDelete), func() *resource.RetryError {
+		_, err = client.DeleteDbUser(deleteOpts)
+		retryable, err := handleMultiOperationsError(err)
+		if retryable {
+			return resource.RetryableError(err)
+		}
+		if err != nil {
+			return resource.NonRetryableError(err)
+		}
+		return nil
+	})
+	if err != nil {
+		return diag.Errorf("error deleting RDS database user: %s", err)
 	}
 
 	return nil

@@ -16,7 +16,6 @@ import (
 
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/common"
 	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/config"
-	"github.com/huaweicloud/terraform-provider-huaweicloud/huaweicloud/utils"
 )
 
 func ResourceIdentityUser() *schema.Resource {
@@ -60,16 +59,6 @@ func ResourceIdentityUser() *schema.Resource {
 				Optional:     true,
 				RequiredWith: []string{"phone"},
 			},
-			"external_identity_id": {
-				Type:     schema.TypeString,
-				Optional: true,
-			},
-			"external_identity_type": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				Computed:     true,
-				RequiredWith: []string{"external_identity_id"},
-			},
 			"enabled": {
 				Type:     schema.TypeBool,
 				Optional: true,
@@ -104,20 +93,6 @@ func ResourceIdentityUser() *schema.Resource {
 	}
 }
 
-func buildExternalIdentityType(d *schema.ResourceData) string {
-	// external_identity_type is valid only when external_identity_id is specified.
-	if _, ok := d.GetOk("external_identity_id"); !ok {
-		return ""
-	}
-
-	if v, ok := d.GetOk("external_identity_type"); ok {
-		return v.(string)
-	}
-
-	// the default value of external_identity_type is TenantIdp
-	return "TenantIdp"
-}
-
 func resourceIdentityUserCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	cfg := meta.(*config.Config)
 	iamClient, err := cfg.IAMV3Client(cfg.GetRegion(d))
@@ -138,8 +113,6 @@ func resourceIdentityUserCreate(ctx context.Context, d *schema.ResourceData, met
 		Phone:         d.Get("phone").(string),
 		AreaCode:      d.Get("country_code").(string),
 		AccessMode:    d.Get("access_type").(string),
-		XUserID:       d.Get("external_identity_id").(string),
-		XUserType:     buildExternalIdentityType(d),
 		Enabled:       &enabled,
 		PasswordReset: &reset,
 		DomainID:      cfg.DomainID,
@@ -183,8 +156,6 @@ func resourceIdentityUserRead(_ context.Context, d *schema.ResourceData, meta in
 		d.Set("pwd_reset", user.PasswordStatus),
 		d.Set("create_time", user.CreateAt),
 		d.Set("last_login", user.LastLogin),
-		d.Set("external_identity_id", user.XUserID),
-		d.Set("external_identity_type", user.XUserType),
 	)
 
 	if err = mErr.ErrorOrNil(); err != nil {
@@ -217,7 +188,7 @@ func resourceIdentityUserUpdate(ctx context.Context, d *schema.ResourceData, met
 	}
 
 	if d.HasChange("description") {
-		updateOpts.Description = utils.String(d.Get("description").(string))
+		updateOpts.Description = d.Get("description").(string)
 	}
 
 	if d.HasChange("email") {
@@ -227,11 +198,6 @@ func resourceIdentityUserUpdate(ctx context.Context, d *schema.ResourceData, met
 	if d.HasChanges("country_code", "phone") {
 		updateOpts.AreaCode = d.Get("country_code").(string)
 		updateOpts.Phone = d.Get("phone").(string)
-	}
-
-	if d.HasChanges("external_identity_id", "external_identity_type") {
-		updateOpts.XUserID = utils.String(d.Get("external_identity_id").(string))
-		updateOpts.XUserType = utils.String(buildExternalIdentityType(d))
 	}
 
 	if d.HasChange("access_type") {
