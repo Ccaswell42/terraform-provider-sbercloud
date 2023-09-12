@@ -145,6 +145,9 @@ The following arguments are supported:
 
 * `volume` - (Required, List) Specifies the volume information. Structure is documented below.
 
+* `restore` - (Optional, List, ForceNew) Specifies the restoration information. It only supported restore to postpaid
+  instance. Structure is documented below. Changing this parameter will create a new resource.s
+
 * `fixed_ip` - (Optional, String, ForceNew) Specifies an intranet floating IP address of RDS DB instance.
   Changing this parameter will create a new resource.
 
@@ -211,6 +214,17 @@ The `volume` block supports:
 * `disk_encryption_id` - (Optional) Specifies the key ID for disk encryption.
   Changing this parameter will create a new resource.
 
+The `restore` block supports:
+
+* `instance_id` - (Required, String, ForceNew) Specifies the source DB instance ID. Changing this parameter will create
+  a new resource.
+
+* `backup_id` - (Required, String, ForceNew) Specifies the ID of the backup used to restore data. Changing this
+  parameter will create a new resource.
+
+* `database_name` - (Optional, Map, ForceNew) Specifies the database to be restored. This parameter applies only to
+  Microsoft SQL Server databases. Changing this parameter will create a new resource.
+
 The `backup_strategy` block supports:
 
 * `keep_days` - (Optional, Int) Specifies the retention days for specific backup files.
@@ -226,6 +240,11 @@ The `backup_strategy` block supports:
   be 1 greater than the hh value. The values of mm and MM must be
   the same and must be set to any of the following: 00, 15, 30, or 45.
   Example value: 08:15-09:15 23:00-00:00.
+
+* `period` - (Optional, String) Specifies the backup cycle. Automatic backups will be performed on the specified days of
+  the week, except when disabling the automatic backup policy. The value range is a comma-separated number, where each
+  number represents a day of the week. For example, a value of 1,2,3,4 would set the backup cycle to Monday, Tuesday,
+  Wednesday, and Thursday. The default value is 1,2,3,4,5,6,7.
 
 The `parameters` block supports:
 
