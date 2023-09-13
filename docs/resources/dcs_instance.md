@@ -133,11 +133,13 @@ The following arguments are supported:
   If omitted, the system will automatically allocate an available IP address to the Redis instance.
   Changing this creates a new instance resource.
 
+* `template_id` - (Optional, String, ForceNew) The Parameter Template ID.
+  Changing this creates a new instance resource.
+
 * `port` - (Optional, Int) Port customization, which is supported only by Redis 4.0 and Redis 5.0 instances.
   Redis instance defaults to 6379. Memcached instance does not use this argument.
 
 * `password` - (Optional, String, ForceNew) Specifies the password of a DCS instance.
-  Changing this creates a new instance.
   The password of a DCS instance must meet the following complexity requirements:
   + Must be a string of 8 to 32 bits in length.
   + Must contain three combinations of the following four characters: Lower case letters, uppercase letter, digital,
@@ -179,26 +181,6 @@ The following arguments are supported:
 
 * `enterprise_project_id` - (Optional, String, ForceNew) The enterprise project id of the dcs instance.
   Changing this creates a new instance.
-
-* `charging_mode` - (Optional, String, ForceNew) Specifies the charging mode of the redis instance.
-  The valid values are as follows:
-  + `prePaid`: indicates the yearly/monthly billing mode.
-  + `postPaid`: indicates the pay-per-use billing mode.
-    Default value is `postPaid`.
-    Changing this creates a new instance.
-
-* `period_unit` - (Optional, String, ForceNew) Specifies the charging period unit of the instance.
-  Valid values are *month* and *year*. This parameter is mandatory if `charging_mode` is set to *prePaid*.
-  Changing this creates a new instance.
-
-* `period` - (Optional, Int, ForceNew) Specifies the charging period of the instance.
-  If `period_unit` is set to *month*, the value ranges from 1 to 9.
-  If `period_unit` is set to *year*, the value ranges from 1 to 3.
-  This parameter is mandatory if `charging_mode` is set to *prePaid*.
-  Changing this creates a new instance.
-
-* `auto_renew` - (Optional, String) Specifies whether auto renew is enabled.
-  Valid values are `true` and `false`, defaults to `false`.
 
 * `tags` - (Optional, Map) The key/value pairs to associate with the dcs instance.
 

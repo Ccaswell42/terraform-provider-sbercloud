@@ -147,6 +147,12 @@ The following arguments are supported:
     capability of VPC, uses the VPC CIDR block to allocate container addresses, and supports direct connections between
     ELB and containers to provide high performance.
 
+* `security_group_id` - (Optional, String) Specifies the default worker node security group ID of the cluster.
+  If left empty, the system will automatically create a default worker node security group for you.
+  The default worker node security group needs to allow access from certain ports to ensure normal communications.
+  If updated, the modified security group will only be applied to nodes newly created or accepted.
+  For existing nodes, you need to manually modify the security group rules for them.
+
 * `cluster_version` - (Optional, String, ForceNew) Specifies the cluster version, defaults to the latest supported
   version. Changing this parameter will create a new cluster resource.
 

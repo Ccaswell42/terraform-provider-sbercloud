@@ -54,6 +54,31 @@ EOF
 }
 ```
 
+### Create function with an alias for latest version
+
+```hcl
+variable "function_name" {}
+
+resource "sbercloud_fgs_function" "with_alias" {
+  name        = var.function_name
+  app         = "default"
+  handler     = "test.handler"
+  memory_size = 128
+  timeout     = 3
+  runtime     = "Python2.7"
+  code_type   = "inline"
+  func_code   = "dCA9ICdIZWxsbyBtZXNzYWdlOiAnICsganN="
+
+  versions {
+    name = "latest"
+
+    aliases {
+      name = "demo"
+    }
+  }
+}
+```
+
 ## Argument Reference
 
 The following arguments are supported:
@@ -109,6 +134,9 @@ The following arguments are supported:
 
 * `mount_user_group_id` - (Optional, String) Specifies the user group ID, a non-0 integer from –1 to 65534. Default to -1.
 
+* `versions` - (Optional, List) Specifies the versions management of the function.
+  The [object](#functiongraph_versions_management) structure is documented below.
+
 * `func_mounts` - (Optional, List) Specifies the file system list. The `func_mounts` object structure is documented below.
 
 The `func_mounts` block supports:
@@ -120,6 +148,34 @@ The `func_mounts` block supports:
 * `mount_share_path` - (Required, String) Specifies the remote mount path. Example: 192.168.0.12:/data.
 
 * `local_mount_path` - (Required, String) Specifies the function access path.
+
+<a name="functiongraph_versions_management"></a>
+The `versions` block supports:
+
+* `name` - (Required, String) Specifies the version name.
+
+  -> Currently, only supports the management of the default version (**latest**).
+
+* `aliases` - (Optional, List) Specifies the aliases management for specified version.
+  The [object](#functiongraph_aliases_management) structure is documented below.
+
+  -> A version can configure at most **one** alias.
+
+<a name="functiongraph_aliases_management"></a>
+The `aliases` block supports:
+
+* `name` - (Required, String) Specifies the name of the version alias.
+
+* `description` - (Optional, String) Specifies the description of the version alias.
+
+
+
+<a name="functiongraph_aliases_management"></a>
+The `aliases` block supports:
+
+* `name` - (Required, String) Specifies the name of the version alias.
+
+* `description` - (Optional, String) Specifies the description of the version alias.
 
 ## Attributes Reference
 

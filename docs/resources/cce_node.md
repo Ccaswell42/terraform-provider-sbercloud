@@ -315,6 +315,9 @@ extend_param = {
   DockerLVMConfigOverride = "dockerThinpool=vgpaas/90%VG;kubernetesLV=vgpaas/10%VG;diskType=evs;lvType=linear"
 }
 ```
+* `extend_params` - (Optional, List, ForceNew) Specifies the extended parameters.
+  The [object](#extend_params) structure is documented below.
+  Changing this parameter will create a new resource.
 
 * `labels` - (Optional, Map, ForceNew) Specifies the tags of a Kubernetes node, key/value pair format.
   Changing this parameter will create a new resource.
@@ -332,6 +335,39 @@ extend_param = {
     create a new resource.
   + `effect` - (Required, String, ForceNew) Available options are NoSchedule, PreferNoSchedule, and NoExecute.
     Changing this parameter will create a new resource.
+
+<a name="extend_params"></a>
+The `extend_params` block supports:
+
+* `max_pods` - (Optional, Int, ForceNew) Specifies the maximum number of instances a node is allowed to create.
+  Changing this parameter will create a new resource.
+
+* `docker_base_size` - (Optional, Int, ForceNew) Specifies the available disk space of a single container on a node,
+  in GB. Changing this parameter will create a new resource.
+
+* `preinstall` - (Optional, String, ForceNew) Specifies the script to be executed before installation.
+  The input value can be a Base64 encoded string or not. Changing this parameter will create a new resource.
+
+* `postinstall` - (Optional, String, ForceNew) Specifies the script to be executed after installation.
+  The input value can be a Base64 encoded string or not. Changing this parameter will create a new resource.
+
+* `node_image_id` - (Optional, String, ForceNew) Specifies the image ID to create the node.
+  Changing this parameter will create a new resource.
+
+* `node_multi_queue` - (Optional, String, ForceNew) Specifies the number of ENI queues.
+  Example setting: **"[{\"queue\":4}]"**. Changing this parameter will create a new resource.
+
+* `nic_threshold` - (Optional, String, ForceNew) Specifies the ENI pre-binding thresholds.
+  Example setting: **"0.3:0.6"**. Changing this parameter will create a new resource.
+
+* `agency_name` - (Optional, String, ForceNew) Specifies the agency name.
+  Changing this parameter will create a new resource.
+
+* `kube_reserved_mem` - (Optional, Int, ForceNew) Specifies the reserved node memory, which is reserved for
+  Kubernetes-related components. Changing this parameter will create a new resource.
+
+* `system_reserved_mem` - (Optional, Int, ForceNew) Specifies the reserved node memory, which is reserved
+  value for system components. Changing this parameter will create a new resource.
 
 The `selectors` block supports:
 

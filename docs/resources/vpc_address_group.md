@@ -53,6 +53,16 @@ The following arguments are supported:
 * `description` - (Optional, String) Specifies the supplementary information about the IP address group.
   The value is a string of no more than 255 characters and cannot contain angle brackets (< or >).
 
+* `max_capacity` - (Optional, Int) Specifies the maximum number of addresses that an address group can contain.
+  Value range: **1**-**20**, the default value is **20**.
+
+* `enterprise_project_id` - (Optional, String, ForceNew) Specifies the enterprise project ID.
+  Changing this creates a new address group.
+
+* `force_destroy` - (Optional, Bool) Specifies whether to forcibly destroy the address group if it is associated with
+  a security group rule, the address group and the associated security group rule will be deleted together.
+  The default value is **false**.
+
 ## Attributes Reference
 
 In addition to all arguments above, the following attributes are exported:
