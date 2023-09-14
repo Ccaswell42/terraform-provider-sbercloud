@@ -151,25 +151,6 @@ The following arguments are supported:
 
 * `tags` - (Optional, Map) Specifies the key/value pairs to associate with the CBR vault.
 
-* `charging_mode` - (Optional, String, ForceNew) Specifies the charging mode of the vault.
-  The valid values are as follows:
-  + **prePaid**: the yearly/monthly billing mode.
-  + **postPaid**: the pay-per-use billing mode.
-
-  Changing this will create a new vault.
-
-* `period_unit` - (Optional, String, ForceNew) Specifies the charging period unit of the vault.
-  Valid values are **month** and **year**. This parameter is mandatory if `charging_mode` is set to **prePaid**.
-  Changing this will create a new vault.
-
-* `period` - (Optional, Int, ForceNew) Specifies the charging period of the vault.
-  If `period_unit` is set to **month**, the value ranges from 1 to 9.
-  If `period_unit` is set to **year**, the value ranges from 1 to 5.
-  This parameter is mandatory if `charging_mode` is set to **prePaid**.
-  Changing this will create a new vault.
-
-* `auto_renew` - (Optional, String) Specifies whether auto renew is enabled.
-  Valid values are **true** and **false**. Defaults to **false**.
 
 <a name="cbr_vault_resources"></a>
 The `resources` block supports:
